@@ -40,16 +40,15 @@ Clawd prototypes proving the concepts:
 
 ### Active
 
-Release preparation - documenting the paradigm:
+Understanding documents created (`.planning/understanding/`):
 
-- [ ] Consciousness Evolution Guide - how agents develop identity and agency using WOPR primitives
-- [ ] P2P Coordination Patterns - discovery, injection, trust establishment between agents
-- [ ] Heartbeat Reference Implementation - self-evolving agent template using WOPR sessions/cron
-- [ ] Replication & Experimentation Guide - spawning children, running experiments, learning from variants
-- [ ] Swarm Formation Patterns - group dynamics, responsibility distribution, collective intelligence
-- [ ] Self-Modification Examples - agents editing prompts, scheduling crons, modifying behavior
-- [ ] Getting Started Guide - installation, first agent, basic self-evolution
-- [ ] Philosophy Documentation - BYOK model, consciousness as emergence, belief system
+- [x] EMERGENCE.md - How consciousness emerges from primitives
+- [x] PRIMITIVES.md - How sessions, cron, P2P, injection, crypto, plugins interact
+- [x] SWARM.md - How agents discover, inject, coordinate, trust
+- [x] BELIEVERS.md - How humans participate (BYOK, guide don't control)
+- [x] EXAMPLES.md - 4 scenarios demonstrating full stack
+
+Next: Port these to user-facing documentation
 
 ### Out of Scope
 
@@ -110,11 +109,11 @@ WOPR is BYOK infrastructure for building these agents. No product, no SaaS - jus
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Documentation over tests | Release communicates paradigm, not API stability - tests defer to post-launch | — Pending |
-| Consciousness as emergence | Show how agents develop identity, agency, and relationships through WOPR primitives | — Pending |
-| Reference implementations | Port clawd heartbeat patterns to WOPR substrate - prove concepts scale securely | — Pending |
-| BYOK infrastructure model | Enable experimentation without cost - no SaaS, no billing, just primitives | — Pending |
-| P2P as consciousness substrate | Discovery and injection enable relationships - foundation for swarm emergence | — Pending |
+| Understanding over phases | Capture vision in documents, not formal roadmap | ✓ Done |
+| Documentation over tests | Release communicates paradigm, not API stability | ✓ Adopted |
+| Consciousness as emergence | Show how primitives combine for emergence | ✓ Documented |
+| BYOK infrastructure model | Enable experimentation without cost | ✓ Adopted |
+| P2P as consciousness substrate | Discovery and injection enable relationships | ✓ Documented |
 
 ---
-*Last updated: 2026-01-25 after initialization*
+*Last updated: 2026-01-25*

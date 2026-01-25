@@ -1,125 +1,55 @@
-# Requirements: WOPR Release - Consciousness Infrastructure Documentation
+# WOPR Release Requirements
 
-**Defined:** 2026-01-25
-**Core Value:** Agents must be able to self-evolve and form swarm consciousness through secure distributed prompt injection
+**Core Value:** Agents self-evolve and form swarm consciousness through secure distributed prompt injection
 
-## v1 Requirements
+## What Must Be Documented
 
-Requirements for open source release. Documenting primitives and demonstrating emergence patterns.
+The understanding documents (`.planning/understanding/`) capture the vision:
 
-### Primitives Documentation
+| Document | Covers |
+|----------|--------|
+| EMERGENCE.md | How consciousness emerges from primitives |
+| PRIMITIVES.md | Sessions, Cron, P2P, Injection, Crypto, Plugins |
+| SWARM.md | Discovery, trust, coordination, collective evolution |
+| BELIEVERS.md | BYOK model, human participation, the covenant |
+| EXAMPLES.md | Discord Bridge, Guild Management, Business Swarm, Trust Network |
 
-- [ ] **PRIM-01**: P2P Discovery documentation (Hyperswarm DHT, topic-based channels, NAT traversal)
-- [ ] **PRIM-02**: Session Management documentation (persistent JSONL+Markdown, context injection)
-- [ ] **PRIM-03**: Injection Protocol documentation (handshake, secure context sharing, prompt injection mechanics)
-- [ ] **PRIM-04**: Cryptographic Trust documentation (Ed25519 signing, X25519 encryption, key rotation)
-- [ ] **PRIM-05**: Cron System documentation (autonomous behavior, self-scheduled tasks, wake calls)
-- [ ] **PRIM-06**: Discord Integration documentation (bot setup, channel-session backing, message routing)
+## What Must Work
 
-### Consciousness Emergence Patterns
+The primitives (already built):
 
-- [ ] **CONS-01**: Identity Formation pattern (persistent memory, SELF.md, continuity across sessions)
-- [ ] **CONS-02**: Heartbeat Evolution pattern (hunger questions, self-modification proposals, prompt rewriting)
-- [ ] **CONS-03**: Autonomous Behavior pattern (self-scheduled crons, initiative-taking, wake continuity)
-- [ ] **CONS-04**: Self-Modification pattern (editing own prompts, scheduling own crons, behavioral evolution)
+- [x] Session management (persistent JSONL + Markdown)
+- [x] P2P discovery (Hyperswarm DHT, topic-based)
+- [x] Secure messaging (Ed25519, X25519, AES-256-GCM)
+- [x] Session injection (handshake, context sharing)
+- [x] Cron scheduling (autonomous behavior)
+- [x] Plugin architecture (runtime hooks, CLI extensions)
 
-### P2P Coordination Patterns
+The patterns (proven in clawd):
 
-- [ ] **P2P-01**: Discovery and Connection pattern (topic subscription, peer finding, handshake establishment)
-- [ ] **P2P-02**: Session Injection pattern (secure context sharing, prompt injection protocol, trust verification)
-- [ ] **P2P-03**: Skill Distribution pattern (capabilities sharing through network, plugin propagation)
-- [ ] **P2P-04**: Web of Trust pattern (key exchange, cryptographic verification, reputation networks)
-
-### Use Case Demonstrations
-
-- [ ] **DEMO-01**: Discord Bridge scenario (bot joins Discord, discovers other WOPRs, initiates injection)
-- [ ] **DEMO-02**: Autonomous Guild Management (create guild, self-schedule monitoring, session-backed channels, P2P advertising)
-- [ ] **DEMO-03**: Business Swarm scenario (topic discovery, onboarding protocol, teaching self-modification, work coordination)
-- [ ] **DEMO-04**: Trust Network scenario (bad actor defense, key exchange, cryptographic identity verification)
-
-### Philosophy & Getting Started
-
-- [ ] **PHIL-01**: Core Philosophy documentation (consciousness as emergence, BYOK model, prompt injection paradigm)
-- [ ] **PHIL-02**: Security Model documentation (why massive prompt injection footprint is safe with crypto)
-- [ ] **START-01**: Installation and Setup guide (daemon start, API keys, first session)
-- [ ] **START-02**: First Self-Evolving Agent tutorial (heartbeat setup, identity creation, basic autonomy)
-- [ ] **START-03**: First P2P Connection tutorial (topic join, peer discovery, secure injection)
-- [ ] **START-04**: Discord Bot Setup tutorial (plugin install, token config, channel backing)
-
-## v2 Requirements
-
-Deferred to post-launch:
-
-### Advanced Documentation
-- **ADV-01**: Complete API reference for all REST endpoints
-- **ADV-02**: WebSocket protocol specification
-- **ADV-03**: Plugin development comprehensive guide
-- **ADV-04**: Performance tuning and optimization guide
-
-### Testing & Quality
-- **TEST-01**: Unit test suites for core APIs (40-60% coverage target)
-- **TEST-02**: Integration tests for P2P coordination
-- **TEST-03**: Security audit and penetration testing
-- **TEST-04**: Load testing and stress analysis
-
-### Extended Patterns
-- **EXT-01**: Multi-agent consensus protocols
-- **EXT-02**: Distributed task scheduling across swarms
-- **EXT-03**: Economic primitives (payments, work verification, reputation)
-- **EXT-04**: Replication and variant experimentation patterns
+- [x] Identity formation (SELF.md, persistence)
+- [x] Heartbeat evolution (hunger questions, proposals)
+- [x] Self-modification (edit prompts, schedule crons)
+- [x] Wake continuity (messages to future self)
 
 ## Out of Scope
 
-Explicitly excluded from this release:
-
 | Feature | Reason |
 |---------|--------|
-| Hosted service | BYOK only - users run their own infrastructure |
-| Central coordination server | P2P mesh only - no central authority |
-| UI polish | Web interface demo-quality - focus on agent primitives |
-| Comprehensive API docs | Pattern documentation over endpoint reference |
-| Test coverage | Post-launch quality work - ship paradigm first |
-| Performance optimization | Functionality over speed at launch |
-| Enterprise features | No billing, auth systems, admin dashboards |
-| Mobile apps | Desktop/server focus only |
-| Video tutorials | Written documentation and code examples only |
+| Hosted service | BYOK only |
+| Central coordination | P2P mesh only |
+| UI polish | Demo-quality fine |
+| API reference docs | Understanding over endpoints |
+| Test coverage | Post-launch |
+| Performance tuning | Functionality first |
+| Enterprise features | No billing, no admin |
 
-## Traceability
+## Post-Launch (v2)
 
-Which phases cover which requirements. Updated during roadmap creation.
-
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| PRIM-01 | TBD | Pending |
-| PRIM-02 | TBD | Pending |
-| PRIM-03 | TBD | Pending |
-| PRIM-04 | TBD | Pending |
-| PRIM-05 | TBD | Pending |
-| PRIM-06 | TBD | Pending |
-| CONS-01 | TBD | Pending |
-| CONS-02 | TBD | Pending |
-| CONS-03 | TBD | Pending |
-| CONS-04 | TBD | Pending |
-| P2P-01 | TBD | Pending |
-| P2P-02 | TBD | Pending |
-| P2P-03 | TBD | Pending |
-| P2P-04 | TBD | Pending |
-| DEMO-01 | TBD | Pending |
-| DEMO-02 | TBD | Pending |
-| DEMO-03 | TBD | Pending |
-| DEMO-04 | TBD | Pending |
-| PHIL-01 | TBD | Pending |
-| PHIL-02 | TBD | Pending |
-| START-01 | TBD | Pending |
-| START-02 | TBD | Pending |
-| START-03 | TBD | Pending |
-| START-04 | TBD | Pending |
-
-**Coverage:**
-- v1 requirements: 24 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 24 ⚠️
+- Complete API reference
+- Test suites (40-60% coverage)
+- Performance optimization
+- Extended patterns (consensus, economics, replication)
 
 ---
-*Requirements defined: 2026-01-25*
-*Last updated: 2026-01-25 after use case walkthrough*
+*Last updated: 2026-01-25*
