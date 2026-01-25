@@ -32,7 +32,8 @@ import {
 } from "./plugins.js";
 import {
   generatePKCE, buildAuthUrl, exchangeCode, saveOAuthTokens, saveApiKey,
-  loadAuth, clearAuth, isAuthenticated, getAuthType, getAccessToken
+  loadAuth, clearAuth, isAuthenticated, getAuthType, getAccessToken,
+  loadClaudeCodeCredentials
 } from "./auth.js";
 
 // Ensure directories exist
@@ -992,8 +993,22 @@ const [,, command, subcommand, ...args] = process.argv;
   } else if (command === "auth") {
     if (!subcommand || subcommand === "status") {
       // Show auth status
+      const claudeCodeAuth = loadClaudeCodeCredentials();
       const auth = loadAuth();
-      if (!auth || (!auth.apiKey && !auth.accessToken)) {
+
+      if (claudeCodeAuth) {
+        console.log("Auth: Claude Code OAuth (shared credentials)");
+        console.log("Source: ~/.claude/.credentials.json");
+        if (claudeCodeAuth.expiresAt) {
+          const exp = new Date(claudeCodeAuth.expiresAt);
+          const now = Date.now();
+          if (claudeCodeAuth.expiresAt > now) {
+            console.log(`Expires: ${exp.toLocaleString()}`);
+          } else {
+            console.log(`Expired: ${exp.toLocaleString()} (will auto-refresh)`);
+          }
+        }
+      } else if (!auth || (!auth.apiKey && !auth.accessToken)) {
         console.log("Not authenticated");
         console.log("\nLogin with Claude Max/Pro:");
         console.log("  wopr auth login");

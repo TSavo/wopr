@@ -8,7 +8,12 @@
 
 import { randomBytes, createHash } from "crypto";
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 import { AUTH_FILE } from "./paths.js";
+
+// Claude Code credentials location
+const CLAUDE_CODE_CREDENTIALS = join(homedir(), ".claude", ".credentials.json");
 
 // Anthropic OAuth configuration
 const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
@@ -131,8 +136,35 @@ export async function refreshAccessToken(
   };
 }
 
-// Load auth state from disk
+// Load Claude Code credentials if available
+export function loadClaudeCodeCredentials(): AuthState | null {
+  if (!existsSync(CLAUDE_CODE_CREDENTIALS)) return null;
+  try {
+    const data = JSON.parse(readFileSync(CLAUDE_CODE_CREDENTIALS, "utf-8"));
+    const oauth = data.claudeAiOauth;
+    if (oauth?.accessToken) {
+      return {
+        type: "oauth",
+        accessToken: oauth.accessToken,
+        refreshToken: oauth.refreshToken,
+        expiresAt: oauth.expiresAt,
+        email: oauth.email,
+        updatedAt: Date.now(),
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// Load auth state from disk (checks Claude Code creds first, then WOPR's own)
 export function loadAuth(): AuthState | null {
+  // First check for Claude Code credentials
+  const claudeCodeAuth = loadClaudeCodeCredentials();
+  if (claudeCodeAuth) return claudeCodeAuth;
+
+  // Fall back to WOPR's own auth file
   if (!existsSync(AUTH_FILE)) return null;
   try {
     return JSON.parse(readFileSync(AUTH_FILE, "utf-8"));
