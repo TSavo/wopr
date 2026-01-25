@@ -27,8 +27,13 @@ import {
   installPlugin, removePlugin, enablePlugin, disablePlugin, listPlugins,
   loadAllPlugins, getLoadedPlugin, getPluginCommands,
   addRegistry as addPluginRegistry, removeRegistry as removePluginRegistry, listRegistries as listPluginRegistries,
-  searchPlugins
+  searchPlugins,
+  emitInjection
 } from "./plugins.js";
+import {
+  generatePKCE, buildAuthUrl, exchangeCode, saveOAuthTokens, saveApiKey,
+  loadAuth, clearAuth, isAuthenticated, getAuthType, getAccessToken
+} from "./auth.js";
 
 // Ensure directories exist
 [WOPR_HOME, SESSIONS_DIR, SKILLS_DIR].forEach(dir => {
@@ -580,6 +585,11 @@ Usage:
   wopr daemon status                         Check if daemon is running
   wopr daemon logs                           Show daemon logs
 
+  wopr auth                                  Show auth status
+  wopr auth login                            Login with Claude Max/Pro (OAuth)
+  wopr auth api-key <key>                    Use API key instead
+  wopr auth logout                           Clear credentials
+
   wopr id                                    Show your WOPR ID
   wopr id init [--force]                     Generate identity keypair
   wopr id rotate [--broadcast]               Rotate keys (notifies peers if --broadcast)
@@ -978,6 +988,103 @@ const [,, command, subcommand, ...args] = process.argv;
         break;
       default:
         help();
+    }
+  } else if (command === "auth") {
+    if (!subcommand || subcommand === "status") {
+      // Show auth status
+      const auth = loadAuth();
+      if (!auth || (!auth.apiKey && !auth.accessToken)) {
+        console.log("Not authenticated");
+        console.log("\nLogin with Claude Max/Pro:");
+        console.log("  wopr auth login");
+        console.log("\nOr use an API key:");
+        console.log("  wopr auth api-key <your-key>");
+      } else if (auth.type === "oauth") {
+        console.log("Auth: OAuth (Claude Max/Pro)");
+        if (auth.email) console.log(`Email: ${auth.email}`);
+        if (auth.expiresAt) {
+          const exp = new Date(auth.expiresAt);
+          console.log(`Expires: ${exp.toLocaleString()}`);
+        }
+      } else if (auth.type === "api_key") {
+        console.log("Auth: API Key");
+        console.log(`Key: ${auth.apiKey?.substring(0, 12)}...`);
+      }
+    } else if (subcommand === "login") {
+      // Start OAuth flow
+      const pkce = generatePKCE();
+      const redirectUri = "http://localhost:9876/callback";
+      const authUrl = buildAuthUrl(pkce, redirectUri);
+
+      console.log("Opening browser for authentication...\n");
+      console.log("If browser doesn't open, visit:");
+      console.log(authUrl);
+      console.log("\nWaiting for authentication...");
+
+      // Start local server to catch callback
+      const http = await import("http");
+      const url = await import("url");
+
+      const server = http.createServer(async (req, res) => {
+        const parsed = url.parse(req.url || "", true);
+        if (parsed.pathname === "/callback") {
+          const code = parsed.query.code as string;
+          const state = parsed.query.state as string;
+
+          if (state !== pkce.state) {
+            res.writeHead(400);
+            res.end("Invalid state parameter");
+            server.close();
+            console.error("Error: Invalid state parameter");
+            process.exit(1);
+          }
+
+          try {
+            const tokens = await exchangeCode(code, pkce.codeVerifier, redirectUri);
+            saveOAuthTokens(tokens.accessToken, tokens.refreshToken, tokens.expiresIn);
+
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.end("<html><body><h1>Success!</h1><p>You can close this window.</p></body></html>");
+            server.close();
+
+            console.log("\nAuthenticated successfully!");
+            console.log("Your Claude Max/Pro subscription is now linked.");
+            process.exit(0);
+          } catch (err: any) {
+            res.writeHead(500);
+            res.end(`Error: ${err.message}`);
+            server.close();
+            console.error("Error:", err.message);
+            process.exit(1);
+          }
+        }
+      });
+
+      server.listen(9876, () => {
+        // Open browser
+        const open = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+        execSync(`${open} "${authUrl}"`, { stdio: "ignore" });
+      });
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        console.error("\nTimeout waiting for authentication");
+        server.close();
+        process.exit(1);
+      }, 5 * 60 * 1000);
+
+    } else if (subcommand === "api-key") {
+      if (!args[0]) {
+        console.error("Usage: wopr auth api-key <your-api-key>");
+        process.exit(1);
+      }
+      saveApiKey(args[0]);
+      console.log("API key saved");
+    } else if (subcommand === "logout") {
+      clearAuth();
+      console.log("Logged out");
+    } else {
+      help();
     }
   } else if (command === "id") {
     if (subcommand === "init") {

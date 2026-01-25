@@ -12,3 +12,4 @@ export const LOG_FILE = join(WOPR_HOME, "daemon.log");
 export const IDENTITY_FILE = join(WOPR_HOME, "identity.json");
 export const ACCESS_FILE = join(WOPR_HOME, "access.json");
 export const PEERS_FILE = join(WOPR_HOME, "peers.json");
+export const AUTH_FILE = join(WOPR_HOME, "auth.json");
