@@ -1,0 +1,22 @@
+[
+  {
+    "name": "weather",
+    "description": "Get current weather for any location using wttr.in",
+    "source": "https://github.com/wopr-skills/weather"
+  },
+  {
+    "name": "discord",
+    "description": "Send messages to Discord channels via webhooks",
+    "source": "https://github.com/wopr-skills/discord"
+  },
+  {
+    "name": "github",
+    "description": "Interact with GitHub repos, issues, and PRs",
+    "source": "https://github.com/wopr-skills/github"
+  },
+  {
+    "name": "memory",
+    "description": "Persistent memory across sessions using local files",
+    "source": "https://github.com/wopr-skills/memory"
+  }
+]

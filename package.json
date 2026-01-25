@@ -1,0 +1,21 @@
+{
+  "name": "wopr",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "wopr": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.12",
+    "hyperswarm": "^4.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.7",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

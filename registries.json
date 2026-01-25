@@ -1,0 +1,10 @@
+[
+  {
+    "name": "official",
+    "url": "github:anthropics/skills"
+  },
+  {
+    "name": "clawdhub",
+    "url": "github:clawdbot/skills"
+  }
+]

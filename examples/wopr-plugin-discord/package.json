@@ -1,0 +1,14 @@
+{
+  "name": "wopr-plugin-discord",
+  "version": "1.0.0",
+  "description": "Discord bot plugin for WOPR - talk to your AI via Discord",
+  "main": "index.js",
+  "type": "module",
+  "wopr": {
+    "type": "plugin",
+    "minVersion": "1.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.14.1"
+  }
+}
