@@ -486,7 +486,7 @@ export async function sendKeyRotation(
 }
 
 export function createP2PListener(
-  onInject: (session: string, message: string) => Promise<void>,
+  onInject: (session: string, message: string, peerKey?: string) => Promise<void>,
   onLog: (msg: string) => void
 ): Hyperswarm | null {
   const identity = getIdentity();
@@ -512,7 +512,7 @@ export function createP2PListener(
 function handleConnection(
   socket: Duplex,
   myPublicKey: string,
-  onInject: (session: string, message: string) => Promise<void>,
+  onInject: (session: string, message: string, peerKey?: string) => Promise<void>,
   onLog: (msg: string) => void
 ): void {
   const rateLimiter = getRateLimiter();
@@ -753,7 +753,7 @@ function handleConnection(
           decryptedPayload = decryptMessage(msg.payload, grant.peerEncryptPub);
         }
 
-        await onInject(msg.session, decryptedPayload);
+        await onInject(msg.session, decryptedPayload, msg.from);
 
         const ack = signMessage<Omit<P2PMessage, "sig">>({
           v: PROTOCOL_VERSION,

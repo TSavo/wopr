@@ -9,6 +9,16 @@ export interface Session {
   created: number;
 }
 
+// Conversation log types
+export type ConversationEntryType = "context" | "message" | "response";
+
+export interface ConversationEntry {
+  ts: number;              // Timestamp
+  from: string;            // Username or "WOPR" or "system"
+  content: string;         // Message content
+  type: ConversationEntryType;
+}
+
 // Cron types
 export interface CronJob {
   name: string;
@@ -234,6 +244,12 @@ export interface StreamMessage {
 
 export type StreamCallback = (msg: StreamMessage) => void;
 
+// Context provider interface - plugins implement this to provide conversation context
+export interface ContextProvider {
+  // Get conversation context for a session (e.g., recent Discord messages)
+  getContext(session: string): Promise<string>;
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   inject(session: string, message: string, onStream?: StreamCallback): Promise<string>;
@@ -250,13 +266,22 @@ export interface WOPRPluginContext {
   // Peers
   getPeers(): Peer[];
 
-  // Events - when your sessions receive injections
+  // Events - when sessions receive injections
   on(event: "injection", handler: InjectionHandler): void;
+  on(event: "stream", handler: StreamHandler): void;
   off(event: "injection", handler: InjectionHandler): void;
+  off(event: "stream", handler: StreamHandler): void;
+
+  // Context providers - plugins register to provide conversation context
+  registerContextProvider(session: string, provider: ContextProvider): void;
+  unregisterContextProvider(session: string): void;
 
   // Plugin's own config
   getConfig<T = any>(): T;
   saveConfig<T = any>(config: T): Promise<void>;
+
+  // Main WOPR config (read-only access)
+  getMainConfig(key?: string): any;
 
   // Logging
   log: PluginLogger;
@@ -271,6 +296,15 @@ export type InjectionHandler = (
   message: string,
   response: string
 ) => void;
+
+// Streaming event - emitted as chunks arrive
+export interface SessionStreamEvent {
+  session: string;
+  from: string; // "cli" | "cron" | "p2p" | peer pubkey
+  message: StreamMessage;
+}
+
+export type StreamHandler = (event: SessionStreamEvent) => void;
 
 export interface PluginLogger {
   info(message: string, ...args: any[]): void;

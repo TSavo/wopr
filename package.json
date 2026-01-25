@@ -7,14 +7,22 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/cli.ts"
+    "dev": "tsx src/cli.ts",
+    "daemon": "tsx src/daemon/index.ts",
+    "daemon:start": "tsx src/cli.ts daemon start",
+    "daemon:stop": "tsx src/cli.ts daemon stop"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.12",
-    "hyperswarm": "^4.16.0"
+    "@hono/node-server": "^1.13.0",
+    "@hono/node-ws": "^1.0.0",
+    "hono": "^4.6.0",
+    "hyperswarm": "^4.16.0",
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.7",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }

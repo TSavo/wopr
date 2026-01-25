@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 
 import { join, resolve } from "path";
 import { execSync } from "child_process";
 import { EventEmitter } from "events";
+import { config as centralConfig } from "./core/config.js";
 import {
   WOPRPlugin,
   WOPRPluginContext,
@@ -10,8 +11,12 @@ import {
   PluginRegistryEntry,
   PluginLogger,
   InjectionHandler,
+  StreamHandler,
+  SessionStreamEvent,
+  StreamMessage,
   Peer,
   StreamCallback,
+  ContextProvider,
 } from "./types.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
@@ -24,6 +29,9 @@ const pluginEvents = new EventEmitter();
 
 // Loaded plugins (runtime)
 const loadedPlugins: Map<string, { plugin: WOPRPlugin; context: WOPRPluginContext }> = new Map();
+
+// Context providers - session -> provider mapping
+const contextProviders: Map<string, ContextProvider> = new Map();
 
 // ============================================================================
 // Plugin Installation
@@ -204,10 +212,7 @@ function createPluginContext(
     getPeers: () => Peer[];
   }
 ): WOPRPluginContext {
-  const configPath = join(
-    plugin.source === "local" ? plugin.path : join(PLUGINS_DIR, plugin.name),
-    "config.json"
-  );
+  const pluginName = plugin.name;
 
   return {
     inject: (session: string, message: string, onStream?: StreamCallback) =>
@@ -217,23 +222,43 @@ function createPluginContext(
     getSessions: injectors.getSessions,
     getPeers: injectors.getPeers,
 
-    on(event: "injection", handler: InjectionHandler) {
+    on(event: "injection" | "stream", handler: InjectionHandler | StreamHandler) {
       pluginEvents.on(event, handler);
     },
 
-    off(event: "injection", handler: InjectionHandler) {
+    off(event: "injection" | "stream", handler: InjectionHandler | StreamHandler) {
       pluginEvents.off(event, handler);
     },
 
-    getConfig<T>(): T {
-      if (!existsSync(configPath)) return {} as T;
-      return JSON.parse(readFileSync(configPath, "utf-8"));
+    registerContextProvider(session: string, provider: ContextProvider) {
+      contextProviders.set(session, provider);
     },
 
-    async saveConfig<T>(config: T): Promise<void> {
-      const dir = plugin.source === "local" ? plugin.path : join(PLUGINS_DIR, plugin.name);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(configPath, JSON.stringify(config, null, 2));
+    unregisterContextProvider(session: string) {
+      contextProviders.delete(session);
+    },
+
+    getConfig<T>(): T {
+      // Load from central config
+      const cfg = centralConfig.get();
+      return (cfg.plugins.data?.[pluginName] || {}) as T;
+    },
+
+    async saveConfig<T>(pluginConfig: T): Promise<void> {
+      // Save to central config
+      await centralConfig.load();
+      const cfg = centralConfig.get();
+      if (!cfg.plugins.data) cfg.plugins.data = {};
+      cfg.plugins.data[pluginName] = pluginConfig;
+      centralConfig.setValue("plugins.data", cfg.plugins.data);
+      await centralConfig.save();
+    },
+
+    getMainConfig(key?: string): any {
+      // Access main WOPR config (read-only)
+      const cfg = centralConfig.get();
+      if (!key) return cfg;
+      return centralConfig.getValue(key);
     },
 
     log: createPluginLogger(plugin.name),
@@ -321,9 +346,15 @@ export async function shutdownAllPlugins(): Promise<void> {
   }
 }
 
-// Emit injection event to all plugins
+// Emit injection event to all plugins (after response complete)
 export function emitInjection(session: string, from: string, message: string, response: string): void {
   pluginEvents.emit("injection", session, from, message, response);
+}
+
+// Emit stream event to all plugins (real-time as chunks arrive)
+export function emitStream(session: string, from: string, message: StreamMessage): void {
+  const event: SessionStreamEvent = { session, from, message };
+  pluginEvents.emit("stream", event);
 }
 
 // ============================================================================
@@ -385,4 +416,12 @@ export async function searchPlugins(query: string): Promise<any[]> {
   } catch {
     return [];
   }
+}
+
+// ============================================================================
+// Context Providers
+// ============================================================================
+
+export function getContextProvider(session: string): ContextProvider | undefined {
+  return contextProviders.get(session);
 }

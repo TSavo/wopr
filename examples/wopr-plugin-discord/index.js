@@ -8,11 +8,58 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import * as readline from "readline";
 
 let client = null;
 let ctx = null;
 const pendingDiscordRequests = new Set(); // Track requests we initiated
+
+// Context provider - fetches conversation history for mention-mode channels
+const discordContextProvider = {
+  async getContext(session) {
+    const config = ctx.getConfig();
+
+    // Find channel mapped to this session
+    const entry = Object.entries(config.mappings || {}).find(([_, m]) => m.session === session);
+    if (!entry) return ""; // No channel mapped
+
+    const [channelId, mapping] = entry;
+
+    // If respondToAll, we're already seeing everything - no history needed
+    if (mapping.respondToAll) return "";
+
+    // Mention-mode: fetch messages since last response
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel) return "";
+
+      const lastResponse = mapping.lastResponseAt || 0;
+      const historyLimit = config.historyLimit || 50;
+      const messages = await channel.messages.fetch({ limit: historyLimit });
+
+      // Filter to messages after last response
+      const messageArray = Array.from(messages.values())
+        .filter(msg => !lastResponse || msg.createdTimestamp > lastResponse)
+        .reverse(); // Oldest first
+
+      if (messageArray.length === 0) return "";
+
+      let context = "\n\n--- Messages Since Last Response ---\n";
+      for (const msg of messageArray) {
+        if (msg.author.bot && msg.author.id === client.user.id) {
+          context += `[${msg.author.username}]: ${msg.content}\n`;
+        } else if (!msg.author.bot) {
+          context += `[${msg.author.username}]: ${msg.content}\n`;
+        }
+      }
+      context += "--- End History ---\n\n";
+
+      return context;
+    } catch (err) {
+      ctx.log.warn(`Failed to fetch context: ${err.message}`);
+      return "";
+    }
+  }
+};
 
 // ============================================================================
 // Pairing Requests (user-initiated, owner-approved)
@@ -265,9 +312,11 @@ async function handleMessage(message) {
   const mapping = config.mappings?.[message.channel.id];
 
   // In DMs, always respond if user is authorized
-  // In channels, require mention or respondToAll config
+  // In guild channels, check if respondToAll is enabled, otherwise require mention
   if (!isDM && !isMentioned) {
-    if (!mapping?.respondToAll) return;
+    if (!mapping?.respondToAll) {
+      return; // Mention required (default behavior)
+    }
   }
 
   // Get session for this channel
@@ -279,13 +328,7 @@ async function handleMessage(message) {
 
   // Check if user is authorized for this session
   if (!isUserAuthorized(userId, session)) {
-    // Check channel-level permissions
-    if (mapping?.allowedUsers && mapping.allowedUsers !== "*") {
-      if (!mapping.allowedUsers.includes(userId)) {
-        ctx.log.debug(`User ${message.author.tag} not authorized for ${session}`);
-        return;
-      }
-    } else if (config.defaultAccess === "none") {
+    if (config.defaultAccess === "none") {
       ctx.log.debug(`User ${message.author.tag} not paired, defaultAccess=none`);
       return;
     } else if (config.defaultAccess === "paired") {
@@ -319,23 +362,29 @@ async function handleMessage(message) {
 
   if (!content) return;
 
+  // React with eyes to show we're processing
+  await message.react("👀").catch(() => {});
+
   // Show typing
   await message.channel.sendTyping();
 
+  // Context is now handled by the context provider system
+  // This works for Discord messages, cron jobs, CLI injections, etc.
   const prompt = `[${message.author.username}]: ${content}`;
   ctx.log.info(`${message.author.tag} -> ${session}: ${content.substring(0, 50)}...`);
 
-  try {
-    // Track this request so we don't double-post via injection event
-    const requestId = `${session}:${Date.now()}`;
-    pendingDiscordRequests.add(requestId);
+  // Track this request so we don't double-post via injection event
+  const requestId = `${session}:${Date.now()}`;
+  pendingDiscordRequests.add(requestId);
 
-    // Buffer for accumulating text between sends
-    let textBuffer = "";
-    let lastSendTime = 0;
-    const minSendInterval = 1500; // Don't flood Discord - wait at least 1.5s between messages
-    let repliedOnce = false;
-    let typingInterval = null;
+  // Buffer for accumulating text between sends
+  let textBuffer = "";
+  let lastSendTime = 0;
+  const minSendInterval = 1500; // Don't flood Discord - wait at least 1.5s between messages
+  let repliedOnce = false;
+  let typingInterval = null;
+
+  try {
 
     // Keep typing indicator active during long operations
     typingInterval = setInterval(() => {
@@ -405,16 +454,35 @@ async function handleMessage(message) {
     // Cleanup
     if (typingInterval) clearInterval(typingInterval);
 
+    // Replace eyes with checkmark to show completion
+    await message.reactions.cache.get("👀")?.users.remove(client.user.id).catch(() => {});
+    await message.react("✅").catch(() => {});
+
     // Remove from pending (with small delay for event propagation)
     setTimeout(() => pendingDiscordRequests.delete(requestId), 1000);
 
-    // Update last seen
+    // Update last seen and last response time
+    const needsSave = config.users?.[userId] || mapping;
     if (config.users?.[userId]) {
       config.users[userId].lastSeen = Date.now();
+    }
+    // Track when WOPR last responded in this channel (for mention-mode history)
+    if (mapping) {
+      mapping.lastResponseAt = Date.now();
+    }
+    if (needsSave) {
       ctx.saveConfig(config);
     }
   } catch (err) {
     ctx.log.error(`Injection error: ${err.message}`);
+
+    // Cleanup typing
+    if (typingInterval) clearInterval(typingInterval);
+
+    // Replace eyes with X to show error
+    await message.reactions.cache.get("👀")?.users.remove(client.user.id).catch(() => {});
+    await message.react("❌").catch(() => {});
+
     await message.reply("Sorry, I encountered an error processing that request.");
   }
 }
@@ -430,72 +498,23 @@ const plugin = {
 
   commands: [
     {
-      name: "auth",
-      description: "Set up Discord bot token",
-      usage: "wopr discord auth",
-      async handler(context, args) {
-        ctx = context;
-
-        console.log(`
-Discord Bot Setup
-=================
-
-1. Go to https://discord.com/developers/applications
-2. Click "New Application" and give it a name
-3. Go to "Bot" section, click "Add Bot"
-4. Under "Privileged Gateway Intents", enable MESSAGE CONTENT INTENT
-5. Click "Reset Token" to get a new token
-6. Copy the token
-
-`);
-
-        const rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout,
-        });
-
-        const token = await new Promise((resolve) => {
-          rl.question("Paste your bot token: ", (answer) => {
-            rl.close();
-            resolve(answer.trim());
-          });
-        });
-
-        if (!token) {
-          console.error("No token provided.");
-          process.exit(1);
-        }
-
-        const config = context.getConfig();
-        config.token = token;
-        config.mappings = config.mappings || {};
-        config.users = config.users || {};
-        config.pairingCodes = config.pairingCodes || {};
-        config.autoCreate = true;
-        config.defaultAccess = "all"; // all, paired, none
-        await context.saveConfig(config);
-
-        console.log("\nToken saved!");
-        console.log("Default access: all (anyone can use the bot)");
-        console.log("\nTo restrict access, run: wopr discord access paired");
-        console.log("Then create pairing codes: wopr discord pair create <sessions>");
-      },
-    },
-    {
       name: "status",
       description: "Show Discord connection status",
       usage: "wopr discord status",
       async handler(context, args) {
         const config = context.getConfig();
+        const token = context.getMainConfig("discord.token") || config.token;
 
-        if (!config.token) {
-          console.log("Not configured. Run: wopr discord auth");
+        if (!token) {
+          console.log("Not configured. Run: wopr init");
+          console.log("Or set directly: wopr config set discord.token <YOUR_TOKEN>");
           return;
         }
 
+        const tokenSource = context.getMainConfig("discord.token") ? "central config" : "plugin config";
         console.log("Discord Plugin Status");
         console.log("=====================");
-        console.log(`Token: ${config.token.substring(0, 10)}...`);
+        console.log(`Token: ${token.substring(0, 10)}... (from ${tokenSource})`);
         console.log(`Auto-create: ${config.autoCreate ? "enabled" : "disabled"}`);
         console.log(`Default access: ${config.defaultAccess || "all"}`);
         console.log(`Mapped channels: ${Object.keys(config.mappings || {}).length}`);
@@ -736,30 +755,39 @@ Discord Bot Setup
     {
       name: "map",
       description: "Map a Discord channel to a WOPR session",
-      usage: "wopr discord map <channel-id> <session> [--all] [--users user1,user2]",
+      usage: "wopr discord map <channel-id> <session> [--all]",
       async handler(context, args) {
+        ctx = context;
+
         if (!args[0] || !args[1]) {
-          console.error("Usage: wopr discord map <channel-id> <session> [--all] [--users user1,user2]");
+          console.error("Usage: wopr discord map <channel-id> <session> [--all]");
+          console.error("\nOptions:");
+          console.error("  --all  Respond to all messages (default: mention-only)");
           process.exit(1);
         }
 
         const channelId = args[0];
         const session = args[1];
         const respondToAll = args.includes("--all");
-        const usersIdx = args.indexOf("--users");
-        const allowedUsers = usersIdx >= 0 ? args[usersIdx + 1].split(",") : "*";
 
         const config = context.getConfig();
         config.mappings = config.mappings || {};
         config.mappings[channelId] = {
           session,
           respondToAll,
-          allowedUsers,
           createdAt: Date.now(),
         };
         await context.saveConfig(config);
 
+        // Register as context provider for this session
+        // This makes history fetching work for ALL injection sources (cron, CLI, p2p, etc.)
+        context.registerContextProvider(session, discordContextProvider);
+
         console.log(`Mapped channel ${channelId} -> session "${session}"`);
+        console.log(`Mode: ${respondToAll ? "respond to all messages" : "mention-only (default)"}`);
+        console.log("\nBehavior:");
+        console.log("  Mention-only: Fetches messages since last response when @mentioned (or via cron/inject)");
+        console.log("  All messages: Sees every message in real-time, no history fetch needed");
       },
     },
     {
@@ -767,6 +795,8 @@ Discord Bot Setup
       description: "Remove a channel mapping",
       usage: "wopr discord unmap <channel-id>",
       async handler(context, args) {
+        ctx = context;
+
         if (!args[0]) {
           console.error("Usage: wopr discord unmap <channel-id>");
           process.exit(1);
@@ -779,6 +809,11 @@ Discord Bot Setup
           console.error(`No mapping for channel ${channelId}`);
           process.exit(1);
         }
+
+        const session = config.mappings[channelId].session;
+
+        // Unregister context provider
+        context.unregisterContextProvider(session);
 
         delete config.mappings[channelId];
         await context.saveConfig(config);
@@ -798,13 +833,18 @@ Discord Bot Setup
           return;
         }
 
-        console.log("Channel -> Session Mappings:");
+        console.log("Channel -> Session Mappings:\n");
         for (const [channelId, mapping] of Object.entries(mappings)) {
           console.log(`  ${channelId} -> "${mapping.session}"`);
           if (mapping.channelName) console.log(`    Channel: #${mapping.channelName}`);
           if (mapping.guildName) console.log(`    Server: ${mapping.guildName}`);
-          if (mapping.respondToAll) console.log(`    Mode: respond to all`);
+          console.log(`    Mode: ${mapping.respondToAll ? "respond to all messages" : "mention-only"}`);
+          if (mapping.lastResponseAt) {
+            console.log(`    Last response: ${new Date(mapping.lastResponseAt).toLocaleString()}`);
+          }
+          console.log();
         }
+        console.log("Note: In mention-only mode, WOPR fetches messages since its last response.");
       },
     },
     {
@@ -831,8 +871,11 @@ Discord Bot Setup
     ctx = context;
     const config = context.getConfig();
 
-    if (!config.token) {
-      context.log.warn("Discord not configured. Run: wopr discord auth");
+    // Check central config first, then plugin config for backward compat
+    const token = context.getMainConfig("discord.token") || config.token;
+
+    if (!token) {
+      context.log.warn("Discord not configured. Run: wopr init or: wopr config set discord.token <YOUR_TOKEN>");
       return;
     }
 
@@ -854,6 +897,17 @@ Discord Bot Setup
     client.on(Events.Error, (err) => {
       context.log.error(`Discord error: ${err.message}`);
     });
+
+    // Register context provider for all existing mappings
+    // This enables history fetching for cron jobs, CLI injections, etc.
+    const mappings = config.mappings || {};
+    const sessions = new Set(Object.values(mappings).map(m => m.session));
+    for (const session of sessions) {
+      context.registerContextProvider(session, discordContextProvider);
+    }
+    if (sessions.size > 0) {
+      context.log.info(`Registered context provider for ${sessions.size} session(s)`);
+    }
 
     // Subscribe to ALL session injections - mirror to Discord if mapped
     context.on("injection", async (session, from, message, response) => {
@@ -886,7 +940,7 @@ Discord Bot Setup
     });
 
     try {
-      await client.login(config.token);
+      await client.login(token);
     } catch (err) {
       context.log.error(`Discord login failed: ${err.message}`);
     }
@@ -894,6 +948,14 @@ Discord Bot Setup
 
   async shutdown() {
     if (client) {
+      // Unregister all context providers
+      const config = ctx.getConfig();
+      const mappings = config.mappings || {};
+      const sessions = new Set(Object.values(mappings).map(m => m.session));
+      for (const session of sessions) {
+        ctx.unregisterContextProvider(session);
+      }
+
       ctx?.log.info("Discord disconnecting...");
       await client.destroy();
       client = null;

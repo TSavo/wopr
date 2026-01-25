@@ -1,0 +1,235 @@
+/**
+ * Core session management and injection
+ */
+
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, appendFileSync } from "fs";
+import { join } from "path";
+import { SESSIONS_DIR, SESSIONS_FILE } from "../paths.js";
+import type { StreamCallback, StreamMessage, ConversationEntry } from "../types.js";
+import { emitInjection, emitStream, getContextProvider } from "../plugins.js";
+import { discoverSkills, formatSkillsXml } from "./skills.js";
+
+// Ensure directories exist
+if (!existsSync(SESSIONS_DIR)) {
+  mkdirSync(SESSIONS_DIR, { recursive: true });
+}
+
+export interface Session {
+  name: string;
+  id?: string;
+  context?: string;
+  created: number;
+}
+
+export function getSessions(): Record<string, string> {
+  return existsSync(SESSIONS_FILE) ? JSON.parse(readFileSync(SESSIONS_FILE, "utf-8")) : {};
+}
+
+export function saveSessionId(name: string, id: string): void {
+  const sessions = getSessions();
+  sessions[name] = id;
+  writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2));
+}
+
+export function deleteSessionId(name: string): void {
+  const sessions = getSessions();
+  delete sessions[name];
+  writeFileSync(SESSIONS_FILE, JSON.stringify(sessions, null, 2));
+}
+
+export function getSessionContext(name: string): string | undefined {
+  const contextFile = join(SESSIONS_DIR, `${name}.md`);
+  return existsSync(contextFile) ? readFileSync(contextFile, "utf-8") : undefined;
+}
+
+export function setSessionContext(name: string, context: string): void {
+  const contextFile = join(SESSIONS_DIR, `${name}.md`);
+  writeFileSync(contextFile, context);
+}
+
+export function deleteSession(name: string): void {
+  deleteSessionId(name);
+  const contextFile = join(SESSIONS_DIR, `${name}.md`);
+  if (existsSync(contextFile)) unlinkSync(contextFile);
+}
+
+export function listSessions(): Session[] {
+  const sessions = getSessions();
+  return Object.keys(sessions).map(name => ({
+    name,
+    id: sessions[name],
+    context: getSessionContext(name),
+    created: 0, // TODO: track creation time
+  }));
+}
+
+// Conversation log functions
+function getConversationLogPath(name: string): string {
+  return join(SESSIONS_DIR, `${name}.conversation.jsonl`);
+}
+
+export function appendToConversationLog(name: string, entry: ConversationEntry): void {
+  const logPath = getConversationLogPath(name);
+  const line = JSON.stringify(entry) + "\n";
+  appendFileSync(logPath, line, "utf-8");
+}
+
+export function readConversationLog(name: string, limit?: number): ConversationEntry[] {
+  const logPath = getConversationLogPath(name);
+  if (!existsSync(logPath)) return [];
+
+  const content = readFileSync(logPath, "utf-8");
+  const lines = content.trim().split("\n").filter(l => l);
+  const entries = lines.map(line => JSON.parse(line) as ConversationEntry);
+
+  if (limit && limit > 0) {
+    return entries.slice(-limit);
+  }
+  return entries;
+}
+
+export interface InjectOptions {
+  silent?: boolean;
+  onStream?: StreamCallback;
+  from?: string;
+}
+
+export interface InjectResult {
+  response: string;
+  sessionId: string;
+  cost: number;
+}
+
+export async function inject(
+  name: string,
+  message: string,
+  options?: InjectOptions
+): Promise<InjectResult> {
+  const sessions = getSessions();
+  const existingSessionId = sessions[name];
+  const context = getSessionContext(name);
+  const silent = options?.silent ?? false;
+  const onStream = options?.onStream;
+  const from = options?.from ?? "cli";
+  const collected: string[] = [];
+  let sessionId = existingSessionId || "";
+  let cost = 0;
+
+  if (!silent) {
+    console.log(`[wopr] Injecting into session: ${name}`);
+    if (existingSessionId) {
+      console.log(`[wopr] Resuming session: ${existingSessionId}`);
+    } else {
+      console.log(`[wopr] Creating new session`);
+    }
+  }
+
+  // Check if a plugin provides context for this session (e.g., Discord channel history)
+  const contextProvider = getContextProvider(name);
+  let conversationContext = "";
+  if (contextProvider) {
+    try {
+      conversationContext = await contextProvider.getContext(name);
+      if (!silent && conversationContext) {
+        console.log(`[wopr] Context provider added conversation history`);
+      }
+      // Log context to conversation log
+      if (conversationContext) {
+        appendToConversationLog(name, {
+          ts: Date.now(),
+          from: "system",
+          content: conversationContext,
+          type: "context"
+        });
+      }
+    } catch (err: any) {
+      console.error(`[wopr] Context provider error: ${err.message}`);
+    }
+  }
+
+  // Log incoming message to conversation log
+  appendToConversationLog(name, {
+    ts: Date.now(),
+    from,
+    content: message,
+    type: "message"
+  });
+
+  // Prepend conversation context to message
+  const fullMessage = conversationContext ? `${conversationContext}${message}` : message;
+
+  const skills = discoverSkills();
+  const skillsXml = formatSkillsXml(skills);
+  const baseContext = context || `You are WOPR session "${name}".`;
+  const fullContext = skillsXml ? `${baseContext}\n${skillsXml}` : baseContext;
+
+  const q = query({
+    prompt: fullMessage,
+    options: {
+      resume: existingSessionId,
+      systemPrompt: fullContext,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    }
+  });
+
+  for await (const msg of q) {
+    switch (msg.type) {
+      case "system":
+        if (msg.subtype === "init") {
+          sessionId = msg.session_id;
+          saveSessionId(name, sessionId);
+          if (!silent) console.log(`[wopr] Session ID: ${sessionId}`);
+        }
+        break;
+      case "assistant":
+        for (const block of msg.message.content) {
+          if (block.type === "text") {
+            collected.push(block.text);
+            if (!silent) console.log(block.text);
+            const streamMsg: StreamMessage = { type: "text", content: block.text };
+            if (onStream) onStream(streamMsg);
+            emitStream(name, from, streamMsg);
+          } else if (block.type === "tool_use") {
+            if (!silent) console.log(`[tool] ${block.name}`);
+            const streamMsg: StreamMessage = { type: "tool_use", content: "", toolName: block.name };
+            if (onStream) onStream(streamMsg);
+            emitStream(name, from, streamMsg);
+          }
+        }
+        break;
+      case "result":
+        if (msg.subtype === "success") {
+          cost = msg.total_cost_usd;
+          if (!silent) console.log(`\n[wopr] Complete. Cost: $${cost.toFixed(4)}`);
+          const streamMsg: StreamMessage = { type: "complete", content: `Cost: $${cost.toFixed(4)}` };
+          if (onStream) onStream(streamMsg);
+          emitStream(name, from, streamMsg);
+        } else {
+          if (!silent) console.error(`[wopr] Error: ${msg.subtype}`);
+          const streamMsg: StreamMessage = { type: "error", content: msg.subtype };
+          if (onStream) onStream(streamMsg);
+          emitStream(name, from, streamMsg);
+        }
+        break;
+    }
+  }
+
+  const response = collected.join("\n");
+
+  // Log response to conversation log
+  if (response) {
+    appendToConversationLog(name, {
+      ts: Date.now(),
+      from: "WOPR",
+      content: response,
+      type: "response"
+    });
+  }
+
+  // Emit final injection event for plugins that want complete responses
+  emitInjection(name, from, message, response);
+
+  return { response, sessionId, cost };
+}
