@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WOPR Web UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>WOPR Web UI</h1>
+        <p id="daemon-info">Loading daemon config...</p>
+      </div>
+      <button id="refresh-all">Refresh All</button>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <h2>Menu</h2>
+        <ul class="menu" id="menu-list">
+          <li><a href="#sessions">Sessions</a></li>
+          <li><a href="#chat">Session Chat</a></li>
+          <li><a href="#peers">Peers &amp; Access</a></li>
+          <li><a href="#plugin-config">Plugin Config</a></li>
+          <li><a href="#plugins">Plugins &amp; Skills</a></li>
+          <li><a href="#config">Config Snapshot</a></li>
+        </ul>
+        <h3>Extensions</h3>
+        <ul class="menu" id="extensions-nav-list"></ul>
+      </aside>
+
+      <main>
+        <section id="sessions" class="section-pane" data-section>
+          <div class="section-header">
+            <h2>Sessions</h2>
+            <p>Manage session creation and message injection.</p>
+          </div>
+          <div class="grid">
+            <form id="session-create" class="card">
+              <h3>Create Session</h3>
+              <label>
+                Name
+                <input name="name" required />
+              </label>
+              <label>
+                Context
+                <textarea name="context" placeholder="Optional"></textarea>
+              </label>
+              <button type="submit">Create</button>
+            </form>
+            <form id="session-inject" class="card">
+              <h3>Inject Message</h3>
+              <label>
+                Session
+                <input name="session" required />
+              </label>
+              <label>
+                Message
+                <textarea name="message" required></textarea>
+              </label>
+              <button type="submit">Send</button>
+            </form>
+          </div>
+          <div class="card">
+            <h3>Session List</h3>
+            <ul id="sessions-list" class="list"></ul>
+          </div>
+        </section>
+
+        <section id="chat" class="section-pane" data-section>
+          <div class="section-header">
+            <h2>Session Chat</h2>
+            <p>Review history and chat with a selected session.</p>
+          </div>
+          <div class="grid">
+            <form id="chat-session" class="card">
+              <h3>Select Session</h3>
+              <label>
+                Session
+                <select id="chat-session-select" required></select>
+              </label>
+              <label>
+                History Limit
+                <input id="chat-limit" type="number" min="1" max="200" value="50" />
+              </label>
+              <button type="submit">Load History</button>
+            </form>
+            <form id="chat-send" class="card">
+              <h3>Send Message</h3>
+              <label>
+                Message
+                <textarea id="chat-message" required></textarea>
+              </label>
+              <button type="submit">Send</button>
+            </form>
+          </div>
+          <div class="card chat-card">
+            <h3>Conversation</h3>
+            <div id="chat-log" class="chat-log"></div>
+          </div>
+        </section>
+
+        <section id="peers" class="section-pane" data-section>
+          <div class="section-header">
+            <h2>Peers &amp; Access</h2>
+            <p>Invite peers and manage access to your sessions.</p>
+          </div>
+          <div class="grid">
+            <form id="invite-create" class="card">
+              <h3>Create Invite</h3>
+              <label>
+                Peer Public Key
+                <input name="peerPubkey" required />
+              </label>
+              <label>
+                Sessions (comma-separated)
+                <input name="sessions" placeholder="*" />
+              </label>
+              <button type="submit">Create</button>
+              <p class="hint" id="invite-token"></p>
+            </form>
+            <form id="invite-claim" class="card">
+              <h3>Claim Invite</h3>
+              <label>
+                Token
+                <input name="token" required />
+              </label>
+              <button type="submit">Claim</button>
+            </form>
+          </div>
+          <div class="grid">
+            <form id="access-update" class="card">
+              <h3>Update Access Grant</h3>
+              <label>
+                Peer ID / Name
+                <input name="peer" required />
+              </label>
+              <label>
+                Sessions (comma-separated)
+                <input name="sessions" required />
+              </label>
+              <button type="submit">Update</button>
+            </form>
+            <form id="peer-update" class="card">
+              <h3>Update Peer Sessions</h3>
+              <label>
+                Peer ID / Name
+                <input name="peer" required />
+              </label>
+              <label>
+                Sessions (comma-separated)
+                <input name="sessions" required />
+              </label>
+              <button type="submit">Update</button>
+            </form>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <h3>Peers</h3>
+              <ul id="peers-list" class="list"></ul>
+            </div>
+            <div class="card">
+              <h3>Access Grants</h3>
+              <ul id="access-list" class="list"></ul>
+            </div>
+            <div class="card">
+              <h3>Invites</h3>
+              <ul id="invites-list" class="list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="plugin-config" class="section-pane" data-section>
+          <div class="section-header">
+            <h2>Plugin Configuration</h2>
+            <p>Load and save plugin settings stored in config.</p>
+          </div>
+          <div class="grid">
+            <form id="plugin-config-load" class="card">
+              <h3>Load Plugin Config</h3>
+              <label>
+                Plugin
+                <select name="plugin" id="plugin-config-select" required></select>
+              </label>
+              <button type="submit">Load</button>
+            </form>
+            <form id="plugin-config-save" class="card">
+              <h3>Save Plugin Config</h3>
+              <label>
+                Config JSON
+                <textarea name="config" id="plugin-config-json" placeholder="{}"></textarea>
+              </label>
+              <button type="submit">Save</button>
+            </form>
+          </div>
+          <p class="hint">Config is saved under <code>plugins.data.&lt;plugin&gt;</code>.</p>
+        </section>
+
+        <section id="plugins" class="section-pane" data-section>
+          <div class="section-header">
+            <h2>Plugins &amp; Skills</h2>
+            <p>Install and review plugins and skills.</p>
+          </div>
+          <div class="grid">
+            <form id="plugin-install" class="card">
+              <h3>Install Plugin</h3>
+              <label>
+                Source
+                <input name="source" required />
+              </label>
+              <button type="submit">Install</button>
+            </form>
+            <form id="skill-install" class="card">
+              <h3>Install Skill</h3>
+              <label>
+                Source
+                <input name="source" required />
+              </label>
+              <button type="submit">Install</button>
+            </form>
+          </div>
+          <div class="grid">
+            <div class="card">
+              <h3>Plugins</h3>
+              <ul id="plugins-list" class="list"></ul>
+            </div>
+            <div class="card">
+              <h3>Skills</h3>
+              <ul id="skills-list" class="list"></ul>
+            </div>
+            <div class="card">
+              <h3>Plugin Extensions</h3>
+              <ul id="extensions-list" class="list"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="config" class="section-pane" data-section>
+          <div class="section-header">
+            <h2>Config Snapshot</h2>
+            <p>Current configuration pulled from the daemon.</p>
+          </div>
+          <div class="card">
+            <pre id="config-json">Loading...</pre>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

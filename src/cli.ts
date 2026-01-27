@@ -9,6 +9,7 @@
 
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
 import { execSync } from "child_process";
+import { randomBytes } from "crypto";
 import { join } from "path";
 
 import { WOPR_HOME, SESSIONS_DIR, SKILLS_DIR, LOG_FILE, PID_FILE } from "./paths.js";
@@ -17,6 +18,7 @@ import { parseTimeSpec } from "./core/cron.js";
 import { shortKey } from "./identity.js";
 import { config } from "./core/config.js";
 import { EXIT_OK, EXIT_INVALID } from "./types.js";
+import { hashPassword } from "./core/daemon-auth.js";
 import {
   generatePKCE, buildAuthUrl, exchangeCode, saveOAuthTokens, saveApiKey,
   loadAuth, clearAuth, loadClaudeCodeCredentials
@@ -52,6 +54,15 @@ function getDaemonPid(): number | null {
     unlinkSync(PID_FILE);
     return null;
   }
+}
+
+function startDaemonBackground(): void {
+  const script = process.argv[1];
+  const child = execSync(`nohup node "${script}" daemon run > /dev/null 2>&1 & echo $!`, {
+    encoding: "utf-8",
+    shell: "/bin/bash",
+  });
+  console.log(`Daemon started (PID ${child.trim()})`);
 }
 
 // ==================== CLI Commands ====================
@@ -108,11 +119,18 @@ Usage:
   wopr invite <peer-pubkey> <session>        Create invite for specific peer
   wopr invite claim <token>                  Claim an invite (P2P handshake)
 
+  wopr p2p friend add <peer-pubkey> [sess]   Create invite and optionally claim theirs
+  wopr p2p invites                           List outgoing invites
+  wopr p2p invites revoke <token>            Remove an outgoing invite
+
   wopr access                                Who can inject to your sessions
+  wopr access set <peer> <session...>        Update access grant sessions
   wopr revoke <peer>                         Revoke someone's access
 
   wopr peers                                 Who you can inject to
   wopr peers name <id> <name>                Give a peer a friendly name
+  wopr peers set <id> <session...>           Update peer sessions you can inject to
+  wopr peers forget <id>                     Remove a peer from your list
 
   wopr inject <peer>:<session> <message>     Send to peer (P2P encrypted)
 
@@ -138,6 +156,8 @@ Usage:
 Environment:
   WOPR_HOME                              Base directory (default: ~/wopr)
   ANTHROPIC_API_KEY                      API key for Claude
+  WOPR_DAEMON_TOKEN                      Daemon API token (if auth enabled)
+  WOPR_DAEMON_PASSWORD                   Daemon API password (if auth enabled)
 
 P2P messages are end-to-end encrypted using X25519 ECDH + AES-256-GCM.
 Tokens are bound to the recipient's public key - they cannot be forwarded.
@@ -484,12 +504,7 @@ const [,, command, subcommand, ...args] = process.argv;
           console.log(`Daemon already running (PID ${existing})`);
           return;
         }
-        const script = process.argv[1];
-        const child = execSync(`nohup node "${script}" daemon run > /dev/null 2>&1 & echo $!`, {
-          encoding: "utf-8",
-          shell: "/bin/bash",
-        });
-        console.log(`Daemon started (PID ${child.trim()})`);
+        startDaemonBackground();
         break;
       }
       case "stop": {
@@ -659,6 +674,73 @@ const [,, command, subcommand, ...args] = process.argv;
     } else {
       help();
     }
+  } else if (command === "p2p") {
+    await requireDaemon();
+    if (subcommand === "friend" && args[0] === "add") {
+      const peerPubkey = args[1];
+      if (!peerPubkey) {
+        console.error("Usage: wopr p2p friend add <peer-pubkey> [session...] [--token <token>]");
+        process.exit(1);
+      }
+
+      let token: string | undefined;
+      const sessions: string[] = [];
+      for (let i = 2; i < args.length; i += 1) {
+        if (args[i] === "--token") {
+          token = args[i + 1];
+          i += 1;
+          continue;
+        }
+        sessions.push(args[i]);
+      }
+
+      const grantSessions = sessions.length > 0 ? sessions : ["*"];
+      const invite = await client.createInvite(peerPubkey, grantSessions);
+
+      console.log(`Invite created for ${shortKey(peerPubkey)}`);
+      console.log(invite.token);
+      console.log(`Sessions: ${grantSessions.join(", ")}`);
+
+      if (token) {
+        console.log("\nClaiming their invite (peer must be online)...");
+        const result = await client.claimInvite(token);
+        if (result.code === EXIT_OK) {
+          console.log(`Success! Added peer: ${shortKey(result.peerKey!)}`);
+          console.log(`Sessions: ${result.sessions?.join(", ")}`);
+        } else {
+          console.error(`Failed to claim: ${result.message}`);
+          process.exit(result.code);
+        }
+      } else {
+        console.log("\nTo complete the handshake, rerun with their token:");
+        console.log("  wopr p2p friend add <peer-pubkey> --token <their-token>");
+      }
+    } else if (subcommand === "invites") {
+      if (args[0] === "revoke") {
+        if (!args[1]) {
+          console.error("Usage: wopr p2p invites revoke <token>");
+          process.exit(1);
+        }
+        await client.removePeerInvite(args[1]);
+        console.log("Invite removed.");
+      } else {
+        const invites = await client.getPeerInvites();
+        if (invites.length === 0) {
+          console.log("No outgoing invites.");
+        } else {
+          console.log("Outgoing invites:");
+          for (const invite of invites) {
+            const status = invite.claimedAt ? "claimed" : "pending";
+            const expires = invite.expires ? new Date(invite.expires).toLocaleString() : "unknown";
+            console.log(`  ${invite.token}`);
+            console.log(`    For: ${shortKey(invite.peerKey)} | Sessions: ${invite.sessions.join(", ")}`);
+            console.log(`    Status: ${status} | Expires: ${expires}`);
+          }
+        }
+      }
+    } else {
+      help();
+    }
   } else if (command === "invite") {
     await requireDaemon();
     if (subcommand === "claim") {
@@ -690,16 +772,30 @@ const [,, command, subcommand, ...args] = process.argv;
     }
   } else if (command === "access") {
     await requireDaemon();
-    const grants = await client.getAccessGrants();
-    const active = grants.filter((g: any) => !g.revoked);
-    if (active.length === 0) {
-      console.log("No one has access. Create invite: wopr invite <peer-pubkey> <session>");
-    } else {
-      console.log("Access grants:");
-      for (const g of active) {
-        console.log(`  ${g.peerName || shortKey(g.peerKey)}`);
-        console.log(`    Sessions: ${g.sessions.join(", ")}`);
+    if (subcommand === "set") {
+      const target = args[0];
+      const sessions = args.slice(1);
+      if (!target || sessions.length === 0) {
+        console.error("Usage: wopr access set <peer> <session...>");
+        process.exit(1);
       }
+      const grant = await client.updateAccessGrant(target, sessions);
+      console.log(`Updated access for ${shortKey(grant.peerKey)}.`);
+      console.log(`Sessions: ${grant.sessions.join(", ")}`);
+    } else if (!subcommand) {
+      const grants = await client.getAccessGrants();
+      const active = grants.filter((g: any) => !g.revoked);
+      if (active.length === 0) {
+        console.log("No one has access. Create invite: wopr invite <peer-pubkey> <session>");
+      } else {
+        console.log("Access grants:");
+        for (const g of active) {
+          console.log(`  ${g.peerName || shortKey(g.peerKey)}`);
+          console.log(`    Sessions: ${g.sessions.join(", ")}`);
+        }
+      }
+    } else {
+      help();
     }
   } else if (command === "revoke") {
     await requireDaemon();
@@ -718,6 +814,23 @@ const [,, command, subcommand, ...args] = process.argv;
       }
       await client.namePeer(args[0], args.slice(1).join(" "));
       console.log(`Named peer ${args[0]} as "${args.slice(1).join(" ")}"`);
+    } else if (subcommand === "set") {
+      const target = args[0];
+      const sessions = args.slice(1);
+      if (!target || sessions.length === 0) {
+        console.error("Usage: wopr peers set <id> <session...>");
+        process.exit(1);
+      }
+      const peer = await client.updatePeerAccess(target, sessions);
+      console.log(`Updated peer ${peer.name || peer.id}.`);
+      console.log(`Sessions: ${peer.sessions.join(", ")}`);
+    } else if (subcommand === "forget") {
+      if (!args[0]) {
+        console.error("Usage: wopr peers forget <id>");
+        process.exit(1);
+      }
+      await client.forgetPeer(args[0]);
+      console.log(`Forgot peer ${args[0]}.`);
     } else if (!subcommand) {
       const peers = await client.getPeers();
       if (peers.length === 0) {
@@ -808,6 +921,7 @@ const [,, command, subcommand, ...args] = process.argv;
           if (!args[0]) {
             console.error("Usage: wopr plugin install <source>");
             console.error("  npm:      wopr plugin install wopr-plugin-discord");
+            console.error("  npm:      wopr plugin install wopr-p2p");
             console.error("  github:   wopr plugin install github:user/wopr-discord");
             console.error("  local:    wopr plugin install ./my-plugin");
             process.exit(1);
@@ -995,6 +1109,28 @@ const [,, command, subcommand, ...args] = process.argv;
     const autoStart = await rl.question(`  Auto-start daemon? (y/n) [${existing.daemon.autoStart ? "y" : "n"}]: `);
     if (autoStart) config.setValue("daemon.autoStart", autoStart.toLowerCase() === "y");
 
+    let authToken: string | undefined;
+    let authPassword: string | undefined;
+    const existingAuthMode = existing.daemon.auth?.mode || "none";
+    const authModeInput = await rl.question(`  API auth (none/token/password) [${existingAuthMode}]: `);
+    const authMode = (authModeInput || existingAuthMode).toLowerCase();
+    if (authMode === "token") {
+      const tokenInput = await rl.question("  Token (leave blank to generate): ");
+      const token = tokenInput || randomBytes(24).toString("hex");
+      config.setValue("daemon.auth", { mode: "token", token });
+      authToken = token;
+    } else if (authMode === "password") {
+      const password = await rl.question("  Password (leave blank to keep existing): ");
+      if (password) {
+        config.setValue("daemon.auth", { mode: "password", passwordHash: hashPassword(password) });
+        authPassword = password;
+      } else {
+        config.setValue("daemon.auth.mode", "password");
+      }
+    } else {
+      config.setValue("daemon.auth", { mode: "none" });
+    }
+
     // Anthropic API Key
     console.log("\nAnthropic:");
     const hasKey = existing.anthropic.apiKey ? "(configured)" : "(not set)";
@@ -1033,12 +1169,76 @@ const [,, command, subcommand, ...args] = process.argv;
 
     // Save
     await config.save();
-    rl.close();
 
     console.log("\n✓ Configuration saved!");
     console.log(`  Config file: ~/wopr/config.json`);
+
+    let daemonRunning = await client.isRunning();
+    if (!daemonRunning) {
+      const startNow = await rl.question("\nDaemon not running. Start it now? (y/n) [y]: ");
+      if (!startNow || startNow.toLowerCase() === "y") {
+        startDaemonBackground();
+        daemonRunning = await client.isRunning();
+      } else {
+        console.log("Daemon start skipped.");
+      }
+    }
+
+    if (daemonRunning) {
+      if (authToken) client.setAuthToken(authToken);
+      if (authPassword) client.setAuthPassword(authPassword);
+      const identity = await client.getIdentity();
+      if (!identity?.initialized) {
+        const createId = await rl.question("\nInitialize identity for P2P? (y/n) [y]: ");
+        if (!createId || createId.toLowerCase() === "y") {
+          await client.initIdentity();
+          console.log("✓ Identity initialized.");
+        }
+      }
+
+      const pluginInput = await rl.question(
+        "\nInstall plugins (comma-separated, blank to skip). Suggested: ./examples/wopr-plugin-webui: "
+      );
+      if (pluginInput.trim()) {
+        const plugins = pluginInput.split(",").map(p => p.trim()).filter(Boolean);
+        for (const plugin of plugins) {
+          try {
+            await client.installPlugin(plugin);
+            console.log(`✓ Installed plugin: ${plugin}`);
+          } catch (err: any) {
+            console.error(`Failed to install plugin ${plugin}: ${err.message}`);
+          }
+        }
+      }
+
+      const skillInput = await rl.question("\nInstall skills (comma-separated sources, blank to skip): ");
+      if (skillInput.trim()) {
+        const skills = skillInput.split(",").map(s => s.trim()).filter(Boolean);
+        for (const skill of skills) {
+          try {
+            await client.installSkill(skill);
+            console.log(`✓ Installed skill: ${skill}`);
+          } catch (err: any) {
+            console.error(`Failed to install skill ${skill}: ${err.message}`);
+          }
+        }
+      }
+
+      const sessionName = await rl.question("\nCreate a session now? (name, blank to skip): ");
+      if (sessionName.trim()) {
+        const sessionContext = await rl.question("  Session context (optional): ");
+        await client.createSession(sessionName.trim(), sessionContext.trim() || undefined);
+        console.log(`✓ Created session: ${sessionName.trim()}`);
+      }
+    } else {
+      console.log("\nDaemon is not running, so plugin/skill setup is skipped.");
+      console.log("Start it with: wopr daemon start");
+    }
+
+    rl.close();
+
     console.log("\nNext steps:");
-    console.log("  wopr daemon start    # Start the daemon");
+    console.log("  wopr daemon start    # Start the daemon (if not running)");
     console.log("  wopr session create  # Create a session");
   } else {
     help();

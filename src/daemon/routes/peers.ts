@@ -8,13 +8,19 @@ import {
   getPeers,
   revokePeer,
   namePeer,
+  recordInvite,
+  getInvites,
+  removeInvite,
+  updateAccessGrant,
+  updatePeerAccess,
+  forgetPeer,
 } from "../../trust.js";
 import {
   getIdentity,
   shortKey,
   createInviteToken,
 } from "../../identity.js";
-import { sendP2PInject, claimToken, sendKeyRotation } from "../../p2p.js";
+import { sendP2PInject, claimToken } from "../../p2p.js";
 import { EXIT_OK } from "../../types.js";
 
 export const peersRouter = new Hono();
@@ -65,12 +71,40 @@ peersRouter.post("/invite", async (c) => {
   }
 
   const token = createInviteToken(peerPubkey, sessions);
+  recordInvite(token);
 
   return c.json({
     token,
     forPeer: shortKey(peerPubkey),
     sessions,
   });
+});
+
+// List outgoing invites
+peersRouter.get("/invites", (c) => {
+  const invites = getInvites();
+  return c.json({
+    invites: invites.map(invite => ({
+      token: invite.token,
+      peerKey: invite.peerKey,
+      sessions: invite.sessions,
+      created: invite.created,
+      expires: invite.expires,
+      claimedAt: invite.claimedAt || null,
+      claimedBy: invite.claimedBy || null,
+    })),
+  });
+});
+
+// Remove an outgoing invite
+peersRouter.delete("/invites/:token", (c) => {
+  const token = c.req.param("token");
+  try {
+    removeInvite(token);
+    return c.json({ removed: true });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400);
+  }
 });
 
 // Claim an invite token
@@ -121,6 +155,54 @@ peersRouter.put("/:id/name", async (c) => {
   try {
     namePeer(id, name);
     return c.json({ success: true, id, name });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400);
+  }
+});
+
+// Update outgoing peer access (sessions/caps you can inject to)
+peersRouter.put("/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { sessions, caps } = body;
+
+  if (!sessions || !Array.isArray(sessions) || sessions.length === 0) {
+    return c.json({ error: "sessions array is required" }, 400);
+  }
+
+  try {
+    const peer = updatePeerAccess(id, sessions, caps);
+    return c.json({ updated: true, peer });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400);
+  }
+});
+
+// Update access grants (who can inject to you)
+peersRouter.put("/:id/access", async (c) => {
+  const id = c.req.param("id");
+  const body = await c.req.json();
+  const { sessions, caps } = body;
+
+  if (!sessions || !Array.isArray(sessions) || sessions.length === 0) {
+    return c.json({ error: "sessions array is required" }, 400);
+  }
+
+  try {
+    const grant = updateAccessGrant(id, sessions, caps);
+    return c.json({ updated: true, grant });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 400);
+  }
+});
+
+// Forget a peer entirely
+peersRouter.delete("/:id/forget", (c) => {
+  const id = c.req.param("id");
+
+  try {
+    forgetPeer(id);
+    return c.json({ forgotten: true });
   } catch (err: any) {
     return c.json({ error: err.message }, 400);
   }

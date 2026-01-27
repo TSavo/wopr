@@ -121,6 +121,45 @@ wopr inject alice:dev "Review this code"
 
 Both result in the same thing: a message sent to the Claude session.
 
+## Channel Model
+
+Channels are how messages move in and out of WOPR. A channel is an external transport plus its
+surrounding context (e.g., Discord channels, P2P friends, email threads). Channels provide:
+
+- **Send/receive** primitives (how messages arrive and how responses are delivered).
+- **Context** (recent history or metadata needed to ground the session).
+- **Mapping** to a session (the session is the unit of agent-native memory).
+
+```
+Channel (discord:#dev)
+├── Transport (Discord API)
+├── Context (recent messages, participants)
+└── Session binding ("dev")
+```
+
+**Key separation:** Sessions are internal, agent-managed state. Channels are external interfaces that
+surface messages and context. This separation allows the same session to be driven by multiple
+channels (or to swap channels without changing session state).
+
+Channels are implemented as adapters so transports like P2P can live in a dedicated channel module
+or move into plugins without touching session logic.
+
+## Middleware Model
+
+Middlewares are pluggable, stackable processors that sit between channels and sessions. They can
+inspect, modify, or block incoming messages before they reach a session, and can also post-process
+responses before they return to a channel (e.g., security filters, formatting, or routing logic).
+Middleware implementations are installed as plugins and registered through the plugin context,
+with configuration stored under `plugins.data.<pluginName>` in the central config.
+
+Example mapping:
+
+```
+Discord channel #dev ──┐
+P2P peer alice         ├─> Session "dev"
+Local CLI              ┘
+```
+
 ## P2P Layer
 
 Built on Hyperswarm - a DHT-based P2P networking stack.

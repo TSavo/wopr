@@ -11,6 +11,8 @@ const DEFAULT_URL = "http://127.0.0.1:7437";
 
 export interface ClientConfig {
   baseUrl?: string;
+  authToken?: string;
+  authPassword?: string;
 }
 
 export interface Session {
@@ -27,16 +29,38 @@ export interface InjectResult {
 
 export class WoprClient {
   private baseUrl: string;
+  private authToken?: string;
+  private authPassword?: string;
 
   constructor(config: ClientConfig = {}) {
     this.baseUrl = config.baseUrl ?? DEFAULT_URL;
+    this.authToken = config.authToken ?? process.env.WOPR_DAEMON_TOKEN;
+    this.authPassword = config.authPassword ?? process.env.WOPR_DAEMON_PASSWORD;
+  }
+
+  setAuthToken(token?: string): void {
+    this.authToken = token;
+    if (token) this.authPassword = undefined;
+  }
+
+  setAuthPassword(password?: string): void {
+    this.authPassword = password;
+    if (password) this.authToken = undefined;
   }
 
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
+    const authHeaders: Record<string, string> = {};
+    if (this.authToken) {
+      authHeaders.Authorization = `Bearer ${this.authToken}`;
+    } else if (this.authPassword) {
+      authHeaders["X-WOPR-PASSWORD"] = this.authPassword;
+    }
+
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers: {
         "Content-Type": "application/json",
+        ...authHeaders,
         ...options?.headers,
       },
     });
@@ -185,13 +209,46 @@ export class WoprClient {
     return data.peers;
   }
 
+  async getPeerInvites(): Promise<any[]> {
+    const data = await this.request<{ invites: any[] }>("/peers/invites");
+    return data.invites;
+  }
+
+  async removePeerInvite(token: string): Promise<void> {
+    await this.request(`/peers/invites/${encodeURIComponent(token)}`, {
+      method: "DELETE",
+    });
+  }
+
   async getAccessGrants(): Promise<any[]> {
     const data = await this.request<{ grants: any[] }>("/peers/access");
     return data.grants;
   }
 
+  async updatePeerAccess(id: string, sessions: string[], caps?: string[]): Promise<any> {
+    const data = await this.request<{ peer: any }>(`/peers/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ sessions, caps }),
+    });
+    return data.peer;
+  }
+
+  async updateAccessGrant(id: string, sessions: string[], caps?: string[]): Promise<any> {
+    const data = await this.request<{ grant: any }>(`/peers/${encodeURIComponent(id)}/access`, {
+      method: "PUT",
+      body: JSON.stringify({ sessions, caps }),
+    });
+    return data.grant;
+  }
+
   async revokePeer(peer: string): Promise<void> {
     await this.request(`/peers/${encodeURIComponent(peer)}`, {
+      method: "DELETE",
+    });
+  }
+
+  async forgetPeer(peer: string): Promise<void> {
+    await this.request(`/peers/${encodeURIComponent(peer)}/forget`, {
       method: "DELETE",
     });
   }
@@ -271,7 +328,7 @@ export class WoprClient {
   }
 
   async installSkill(source: string, name?: string): Promise<void> {
-    await this.request("/skills", {
+    await this.request("/skills/install", {
       method: "POST",
       body: JSON.stringify({ source, name }),
     });
@@ -284,7 +341,7 @@ export class WoprClient {
   }
 
   async createSkill(name: string, description?: string): Promise<void> {
-    await this.request("/skills/create", {
+    await this.request("/skills", {
       method: "POST",
       body: JSON.stringify({ name, description }),
     });
@@ -366,14 +423,14 @@ export class WoprClient {
   }
 
   async createInvite(peerPubkey: string, sessions: string[]): Promise<{ token: string }> {
-    return this.request("/identity/invite", {
+    return this.request("/peers/invite", {
       method: "POST",
       body: JSON.stringify({ peerPubkey, sessions }),
     });
   }
 
   async claimInvite(token: string): Promise<{ code: number; peerKey?: string; sessions?: string[]; message?: string }> {
-    return this.request("/identity/claim", {
+    return this.request("/peers/claim", {
       method: "POST",
       body: JSON.stringify({ token }),
     });
