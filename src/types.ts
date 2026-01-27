@@ -10,13 +10,20 @@ export interface Session {
 }
 
 // Conversation log types
-export type ConversationEntryType = "context" | "message" | "response";
+export type ConversationEntryType = "context" | "message" | "response" | "middleware";
+
+export interface ChannelRef {
+  id: string;              // Channel identifier (e.g., discord channel ID)
+  type: string;            // Channel type (e.g., "discord", "p2p")
+  name?: string;           // Optional human-friendly label
+}
 
 export interface ConversationEntry {
   ts: number;              // Timestamp
   from: string;            // Username or "WOPR" or "system"
   content: string;         // Message content
   type: ConversationEntryType;
+  channel?: ChannelRef;    // Optional channel metadata for traceability
 }
 
 // Cron types
@@ -83,6 +90,16 @@ export interface Peer {
   caps: string[];
   added: number;
   keyHistory?: KeyHistory[];  // Track key rotations
+}
+
+export interface InviteRecord {
+  token: string;
+  peerKey: string;
+  sessions: string[];
+  created: number;
+  expires: number;
+  claimedAt?: number;
+  claimedBy?: string;
 }
 
 export interface InviteToken {
@@ -250,6 +267,41 @@ export interface ContextProvider {
   getContext(session: string): Promise<string>;
 }
 
+export interface MiddlewareInput {
+  session: string;
+  from: string;
+  message: string;
+  channel?: ChannelRef;
+}
+
+export interface MiddlewareOutput {
+  session: string;
+  from: string;
+  response: string;
+  channel?: ChannelRef;
+}
+
+export interface MessageMiddleware {
+  name: string;
+  onIncoming?(input: MiddlewareInput): Promise<string | null>;
+  onOutgoing?(output: MiddlewareOutput): Promise<string | null>;
+}
+
+export interface ChannelAdapter {
+  channel: ChannelRef;
+  session: string;
+  getContext(): Promise<string>;
+  send(message: string): Promise<void>;
+}
+
+export interface WebUiExtension {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  category?: string;
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   inject(session: string, message: string, onStream?: StreamCallback): Promise<string>;
@@ -275,6 +327,23 @@ export interface WOPRPluginContext {
   // Context providers - plugins register to provide conversation context
   registerContextProvider(session: string, provider: ContextProvider): void;
   unregisterContextProvider(session: string): void;
+
+  // Channels - plugins register message channels (e.g., Discord, P2P peers)
+  registerChannel(adapter: ChannelAdapter): void;
+  unregisterChannel(channel: ChannelRef): void;
+  getChannel(channel: ChannelRef): ChannelAdapter | undefined;
+  getChannels(): ChannelAdapter[];
+  getChannelsForSession(session: string): ChannelAdapter[];
+
+  // Middlewares - plugins register message middleware for channels/sessions
+  registerMiddleware(middleware: MessageMiddleware): void;
+  unregisterMiddleware(name: string): void;
+  getMiddlewares(): MessageMiddleware[];
+
+  // Web UI extensions - plugins register navigation links
+  registerWebUiExtension(extension: WebUiExtension): void;
+  unregisterWebUiExtension(id: string): void;
+  getWebUiExtensions(): WebUiExtension[];
 
   // Plugin's own config
   getConfig<T = any>(): T;

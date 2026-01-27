@@ -67,6 +67,37 @@ wopr session delete dev
 
 Sessions can be injected into locally or by authorized peers over P2P.
 
+### Channels
+
+Channels are external message sources/sinks (Discord, P2P peers, etc.) that provide
+context and map into a session. Sessions remain the agent-native unit of memory,
+while channels describe *how* messages arrive and where responses go.
+Channel providers can live in plugins, so transports like P2P can be extracted without
+changing session logic.
+
+### Middleware Plugins
+
+Middlewares are installed as plugins and registered at runtime through the plugin context.
+Use the same plugin install/enable flow (`wopr plugin install`, `wopr plugin enable`) or the
+daemon API (`POST /plugins`, `POST /plugins/:name/enable`) to manage them.
+
+### Plugin Configuration (CLI + API)
+
+Plugin configuration is stored in the central config under `plugins.data.<pluginName>`.
+You can set it via CLI:
+
+```bash
+wopr config set plugins.data.router '{"routes":[{"sourceSession":"support","targetSessions":["billing"]}]}'
+```
+
+Or via the daemon API:
+
+```bash
+curl -X PUT http://localhost:7437/config/plugins.data.router \
+  -H "Content-Type: application/json" \
+  -d '{"routes":[{"sourceSession":"support","targetSessions":["billing"]}]}'
+```
+
 ### Invites & Trust
 
 Trust is explicit and cryptographically bound:

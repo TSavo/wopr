@@ -25,7 +25,7 @@ import {
   encryptMessage,
   decryptMessage,
 } from "./identity.js";
-import { findPeer, isAuthorized, grantAccess, addPeer, getGrantForPeer, processPeerKeyRotation } from "./trust.js";
+import { findPeer, isAuthorized, grantAccess, addPeer, getGrantForPeer, processPeerKeyRotation, markInviteClaimed } from "./trust.js";
 import { getRateLimiter, getReplayProtector } from "./rate-limit.js";
 
 export interface SendResult {
@@ -673,6 +673,7 @@ function handleConnection(
         }
 
         grantAccess(msg.from, token.ses, token.cap, msg.encryptPub);
+        markInviteClaimed(msg.token, msg.from);
         onLog(`Granted access to ${shortKey(msg.from)} for sessions: ${token.ses.join(", ")}`);
 
         const identity = getIdentity()!;

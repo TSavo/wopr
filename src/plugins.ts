@@ -17,6 +17,12 @@ import {
   Peer,
   StreamCallback,
   ContextProvider,
+  ChannelAdapter,
+  ChannelRef,
+  MessageMiddleware,
+  MiddlewareInput,
+  MiddlewareOutput,
+  WebUiExtension,
 } from "./types.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
@@ -32,6 +38,13 @@ const loadedPlugins: Map<string, { plugin: WOPRPlugin; context: WOPRPluginContex
 
 // Context providers - session -> provider mapping
 const contextProviders: Map<string, ContextProvider> = new Map();
+const channelAdapters: Map<string, ChannelAdapter> = new Map();
+const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
+const webUiExtensions: Map<string, WebUiExtension> = new Map();
+
+function channelKey(channel: ChannelRef): string {
+  return `${channel.type}:${channel.id}`;
+}
 
 // ============================================================================
 // Plugin Installation
@@ -110,9 +123,11 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
       installedAt: Date.now(),
     };
   } else {
-    // npm package - normalize to wopr-plugin-<name> format
+    // npm package - normalize to wopr-plugin-<name> format (accept wopr-<name> too)
     const shortName = source.replace(/^wopr-plugin-/, "").replace(/^wopr-/, "");
-    const npmPackage = `wopr-plugin-${shortName}`;
+    const npmPackage = source.startsWith("wopr-") && !source.startsWith("wopr-plugin-")
+      ? source
+      : `wopr-plugin-${shortName}`;
     const pluginDir = join(PLUGINS_DIR, shortName);
     mkdirSync(pluginDir, { recursive: true });
 
@@ -236,6 +251,50 @@ function createPluginContext(
 
     unregisterContextProvider(session: string) {
       contextProviders.delete(session);
+    },
+
+    registerChannel(adapter: ChannelAdapter) {
+      channelAdapters.set(channelKey(adapter.channel), adapter);
+    },
+
+    unregisterChannel(channel: ChannelRef) {
+      channelAdapters.delete(channelKey(channel));
+    },
+
+    getChannel(channel: ChannelRef) {
+      return channelAdapters.get(channelKey(channel));
+    },
+
+    getChannels() {
+      return Array.from(channelAdapters.values());
+    },
+
+    getChannelsForSession(session: string) {
+      return Array.from(channelAdapters.values()).filter(adapter => adapter.session === session);
+    },
+
+    registerMiddleware(middleware: MessageMiddleware) {
+      messageMiddlewares.set(middleware.name, middleware);
+    },
+
+    unregisterMiddleware(name: string) {
+      messageMiddlewares.delete(name);
+    },
+
+    getMiddlewares() {
+      return Array.from(messageMiddlewares.values());
+    },
+
+    registerWebUiExtension(extension: WebUiExtension) {
+      webUiExtensions.set(`${pluginName}:${extension.id}`, extension);
+    },
+
+    unregisterWebUiExtension(id: string) {
+      webUiExtensions.delete(`${pluginName}:${id}`);
+    },
+
+    getWebUiExtensions() {
+      return Array.from(webUiExtensions.values());
     },
 
     getConfig<T>(): T {
@@ -381,6 +440,10 @@ export function getLoadedPlugin(name: string): { plugin: WOPRPlugin; context: WO
   return loadedPlugins.get(name);
 }
 
+export function getWebUiExtensions(): WebUiExtension[] {
+  return Array.from(webUiExtensions.values());
+}
+
 // ============================================================================
 // Plugin Registry
 // ============================================================================
@@ -424,4 +487,42 @@ export async function searchPlugins(query: string): Promise<any[]> {
 
 export function getContextProvider(session: string): ContextProvider | undefined {
   return contextProviders.get(session);
+}
+
+export function getChannel(channel: ChannelRef): ChannelAdapter | undefined {
+  return channelAdapters.get(channelKey(channel));
+}
+
+export function getChannels(): ChannelAdapter[] {
+  return Array.from(channelAdapters.values());
+}
+
+export function getChannelsForSession(session: string): ChannelAdapter[] {
+  return Array.from(channelAdapters.values()).filter(adapter => adapter.session === session);
+}
+
+export function getMiddlewares(): MessageMiddleware[] {
+  return Array.from(messageMiddlewares.values());
+}
+
+export async function applyIncomingMiddlewares(input: MiddlewareInput): Promise<string | null> {
+  let message = input.message;
+  for (const middleware of messageMiddlewares.values()) {
+    if (!middleware.onIncoming) continue;
+    const result = await middleware.onIncoming({ ...input, message });
+    if (result === null) return null;
+    message = result;
+  }
+  return message;
+}
+
+export async function applyOutgoingMiddlewares(output: MiddlewareOutput): Promise<string | null> {
+  let response = output.response;
+  for (const middleware of messageMiddlewares.values()) {
+    if (!middleware.onOutgoing) continue;
+    const result = await middleware.onOutgoing({ ...output, response });
+    if (result === null) return null;
+    response = result;
+  }
+  return response;
 }

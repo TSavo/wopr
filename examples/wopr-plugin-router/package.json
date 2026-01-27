@@ -1,0 +1,11 @@
+{
+  "name": "wopr-plugin-router",
+  "version": "0.1.0",
+  "description": "Example routing middleware for WOPR",
+  "main": "index.js",
+  "type": "module",
+  "wopr": {
+    "type": "plugin",
+    "minVersion": "1.0.0"
+  }
+}

@@ -11,6 +11,11 @@ export interface WoprConfig {
     port: number;
     host: string;
     autoStart: boolean;
+    auth: {
+      mode: "none" | "token" | "password";
+      token?: string;
+      passwordHash?: string;
+    };
   };
   anthropic: {
     apiKey?: string;
@@ -41,6 +46,9 @@ const DEFAULT_CONFIG: WoprConfig = {
     port: 7437,
     host: "127.0.0.1",
     autoStart: false,
+    auth: {
+      mode: "none",
+    },
   },
   anthropic: {},
   oauth: {},

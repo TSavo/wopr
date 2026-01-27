@@ -12,5 +12,6 @@ export const LOG_FILE = join(WOPR_HOME, "daemon.log");
 export const IDENTITY_FILE = join(WOPR_HOME, "identity.json");
 export const ACCESS_FILE = join(WOPR_HOME, "access.json");
 export const PEERS_FILE = join(WOPR_HOME, "peers.json");
+export const INVITES_FILE = join(WOPR_HOME, "invites.json");
 export const AUTH_FILE = join(WOPR_HOME, "auth.json");
 export const CONFIG_FILE = join(WOPR_HOME, "config.json");

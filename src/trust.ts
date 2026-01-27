@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from "fs";
-import type { AccessGrant, Peer, KeyRotation, KeyHistory } from "./types.js";
-import { ACCESS_FILE, PEERS_FILE } from "./paths.js";
+import type { AccessGrant, Peer, KeyRotation, KeyHistory, InviteRecord } from "./types.js";
+import { ACCESS_FILE, PEERS_FILE, INVITES_FILE } from "./paths.js";
 import { getIdentity, initIdentity, shortKey, parseInviteToken, verifyKeyRotation, isInGracePeriod } from "./identity.js";
 
 export function getAccessGrants(): AccessGrant[] {
@@ -19,6 +19,15 @@ export function getPeers(): Peer[] {
 
 export function savePeers(peers: Peer[]): void {
   writeFileSync(PEERS_FILE, JSON.stringify(peers, null, 2), { mode: 0o600 });
+}
+
+export function getInvites(): InviteRecord[] {
+  if (!existsSync(INVITES_FILE)) return [];
+  return JSON.parse(readFileSync(INVITES_FILE, "utf-8"));
+}
+
+export function saveInvites(invites: InviteRecord[]): void {
+  writeFileSync(INVITES_FILE, JSON.stringify(invites, null, 2), { mode: 0o600 });
 }
 
 /**
@@ -148,7 +157,8 @@ export function revokePeer(idOrName: string): void {
     !g.revoked && (
       shortKey(g.peerKey) === idOrName ||
       g.peerName?.toLowerCase() === idOrName.toLowerCase() ||
-      g.id === idOrName
+      g.id === idOrName ||
+      g.peerKey === idOrName
     )
   );
 
@@ -170,6 +180,41 @@ export function namePeer(idOrKey: string, name: string): void {
 
   peer.name = name;
   savePeers(peers);
+}
+
+export function forgetPeer(idOrName: string): void {
+  const peers = getPeers();
+  const remaining = peers.filter(p =>
+    !(
+      p.id === idOrName ||
+      p.publicKey === idOrName ||
+      p.name?.toLowerCase() === idOrName.toLowerCase()
+    )
+  );
+
+  if (remaining.length === peers.length) {
+    throw new Error(`Peer not found: ${idOrName}`);
+  }
+
+  savePeers(remaining);
+}
+
+export function updatePeerAccess(idOrName: string, sessions: string[], caps?: string[]): Peer {
+  const peers = getPeers();
+  const peer = peers.find(p =>
+    p.id === idOrName ||
+    p.publicKey === idOrName ||
+    p.name?.toLowerCase() === idOrName.toLowerCase()
+  );
+
+  if (!peer) {
+    throw new Error(`Peer not found: ${idOrName}`);
+  }
+
+  peer.sessions = sessions;
+  if (caps) peer.caps = caps;
+  savePeers(peers);
+  return peer;
 }
 
 export function grantAccess(peerKey: string, sessions: string[], caps: string[], encryptPub?: string): AccessGrant {
@@ -199,6 +244,28 @@ export function grantAccess(peerKey: string, sessions: string[], caps: string[],
   return grant;
 }
 
+export function updateAccessGrant(idOrName: string, sessions: string[], caps?: string[]): AccessGrant {
+  const grants = getAccessGrants();
+  const grant = grants.find(g =>
+    !g.revoked &&
+    (
+      shortKey(g.peerKey) === idOrName ||
+      g.peerName?.toLowerCase() === idOrName.toLowerCase() ||
+      g.id === idOrName ||
+      g.peerKey === idOrName
+    )
+  );
+
+  if (!grant) {
+    throw new Error(`No active grant found for "${idOrName}"`);
+  }
+
+  grant.sessions = sessions;
+  if (caps) grant.caps = caps;
+  saveAccessGrants(grants);
+  return grant;
+}
+
 export function addPeer(publicKey: string, sessions: string[], caps: string[], encryptPub?: string): Peer {
   const peers = getPeers();
   const peerShort = shortKey(publicKey);
@@ -224,6 +291,48 @@ export function addPeer(publicKey: string, sessions: string[], caps: string[], e
   peers.push(peer);
   savePeers(peers);
   return peer;
+}
+
+export function recordInvite(tokenStr: string): InviteRecord {
+  const token = parseInviteToken(tokenStr);
+  const invites = getInvites();
+
+  const existing = invites.find(invite => invite.token === tokenStr);
+  if (existing) {
+    return existing;
+  }
+
+  const record: InviteRecord = {
+    token: tokenStr,
+    peerKey: token.sub,
+    sessions: token.ses,
+    created: Date.now(),
+    expires: token.exp,
+  };
+
+  invites.push(record);
+  saveInvites(invites);
+  return record;
+}
+
+export function markInviteClaimed(tokenStr: string, claimedBy: string): void {
+  const invites = getInvites();
+  const invite = invites.find(i => i.token === tokenStr);
+  if (!invite) return;
+  if (!invite.claimedAt) {
+    invite.claimedAt = Date.now();
+    invite.claimedBy = claimedBy;
+    saveInvites(invites);
+  }
+}
+
+export function removeInvite(tokenStr: string): void {
+  const invites = getInvites();
+  const remaining = invites.filter(i => i.token !== tokenStr);
+  if (remaining.length === invites.length) {
+    throw new Error("Invite not found");
+  }
+  saveInvites(remaining);
 }
 
 // ============================================

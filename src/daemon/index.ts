@@ -13,6 +13,8 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
 
 import { PID_FILE, LOG_FILE } from "../paths.js";
+import { config } from "../core/config.js";
+import { verifyPassword } from "../core/daemon-auth.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { cronsRouter } from "./routes/crons.js";
 import { authRouter } from "./routes/auth.js";
@@ -27,7 +29,7 @@ import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast
 // Core imports for daemon functionality
 import { getCrons, saveCrons, shouldRunCron } from "../core/cron.js";
 import { inject } from "../core/sessions.js";
-import { createP2PListener } from "../p2p.js";
+import { sendP2PChannelMessage, startP2PChannel } from "../channels/p2p-channel.js";
 import {
   initDiscovery, joinTopic, updateProfile, shutdownDiscovery
 } from "../discovery.js";
@@ -36,7 +38,6 @@ import { loadAllPlugins, shutdownAllPlugins } from "../plugins.js";
 import { getPeers } from "../trust.js";
 import { shortKey } from "../identity.js";
 import type { StreamCallback, Peer } from "../types.js";
-import { sendP2PInject } from "../p2p.js";
 
 const DEFAULT_PORT = 7437;
 const DEFAULT_HOST = "127.0.0.1";
@@ -81,9 +82,11 @@ export function daemonLog(msg: string): void {
   writeFileSync(LOG_FILE, `[${timestamp}] ${msg}\n`, { flag: "a" });
 }
 
-export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
-  const port = config.port ?? DEFAULT_PORT;
-  const host = config.host ?? DEFAULT_HOST;
+export async function startDaemon(daemonConfig: DaemonConfig = {}): Promise<void> {
+  const port = daemonConfig.port ?? DEFAULT_PORT;
+  const host = daemonConfig.host ?? DEFAULT_HOST;
+
+  await config.load();
 
   // Write PID file
   writeFileSync(PID_FILE, process.pid.toString());
@@ -91,6 +94,48 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
 
   // Create Hono app
   const app = createApp();
+  app.use("*", async (c, next) => {
+    if (c.req.path === "/" || c.req.path === "/health") {
+      await next();
+      return;
+    }
+
+    const mode = config.getValue("daemon.auth.mode") ?? "none";
+    if (mode === "none") {
+      await next();
+      return;
+    }
+
+    if (mode === "token") {
+      const token = config.getValue("daemon.auth.token");
+      const header = c.req.header("Authorization") || "";
+      const bearer = header.startsWith("Bearer ") ? header.slice(7) : null;
+      const provided = bearer || c.req.header("X-WOPR-TOKEN");
+      if (token && provided === token) {
+        await next();
+        return;
+      }
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    if (mode === "password") {
+      const passwordHash = config.getValue("daemon.auth.passwordHash");
+      const header = c.req.header("Authorization") || "";
+      let provided = c.req.header("X-WOPR-PASSWORD");
+      if (!provided && header.startsWith("Basic ")) {
+        const decoded = Buffer.from(header.slice(6), "base64").toString();
+        const parts = decoded.split(":");
+        if (parts.length > 1) provided = parts.slice(1).join(":");
+      }
+      if (passwordHash && provided && verifyPassword(provided, passwordHash)) {
+        await next();
+        return;
+      }
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    return c.json({ error: "Unauthorized" }, 401);
+  });
 
   // Setup WebSocket using @hono/node-ws
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -119,7 +164,7 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
       return result.response;
     },
     injectPeer: async (peer: string, session: string, message: string): Promise<string> => {
-      const result = await sendP2PInject(peer, session, message);
+      const result = await sendP2PChannelMessage(peer, session, message);
       return result.message || "";
     },
     getIdentity: () => identity ? {
@@ -183,9 +228,9 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   cronTick();
 
   // Start P2P listener
-  const swarm = createP2PListener(
-    async (session, message, peerKey) => {
-      await inject(session, message, { silent: true, from: peerKey || "p2p" });
+  const swarm = startP2PChannel(
+    async (session, message, peerKey, channel) => {
+      await inject(session, message, { silent: true, from: peerKey || "p2p", channel });
     },
     daemonLog
   );

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WOPR Web UI</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>WOPR Web UI</h1>
+        <p id="daemon-info">Loading daemon config...</p>
+      </div>
+      <button id="refresh-all">Refresh All</button>
+    </header>
+
+    <main>
+      <section>
+        <h2>Sessions</h2>
+        <div class="grid">
+          <form id="session-create" class="card">
+            <h3>Create Session</h3>
+            <label>
+              Name
+              <input name="name" required />
+            </label>
+            <label>
+              Context
+              <textarea name="context" placeholder="Optional"></textarea>
+            </label>
+            <button type="submit">Create</button>
+          </form>
+          <form id="session-inject" class="card">
+            <h3>Inject Message</h3>
+            <label>
+              Session
+              <input name="session" required />
+            </label>
+            <label>
+              Message
+              <textarea name="message" required></textarea>
+            </label>
+            <button type="submit">Send</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>Session List</h3>
+          <ul id="sessions-list" class="list"></ul>
+        </div>
+      </section>
+
+      <section>
+        <h2>Peers & Access</h2>
+        <div class="grid">
+          <form id="invite-create" class="card">
+            <h3>Create Invite</h3>
+            <label>
+              Peer Public Key
+              <input name="peerPubkey" required />
+            </label>
+            <label>
+              Sessions (comma-separated)
+              <input name="sessions" placeholder="*" />
+            </label>
+            <button type="submit">Create</button>
+            <p class="hint" id="invite-token"></p>
+          </form>
+          <form id="invite-claim" class="card">
+            <h3>Claim Invite</h3>
+            <label>
+              Token
+              <input name="token" required />
+            </label>
+            <button type="submit">Claim</button>
+          </form>
+        </div>
+        <div class="grid">
+          <form id="access-update" class="card">
+            <h3>Update Access Grant</h3>
+            <label>
+              Peer ID / Name
+              <input name="peer" required />
+            </label>
+            <label>
+              Sessions (comma-separated)
+              <input name="sessions" required />
+            </label>
+            <button type="submit">Update</button>
+          </form>
+          <form id="peer-update" class="card">
+            <h3>Update Peer Sessions</h3>
+            <label>
+              Peer ID / Name
+              <input name="peer" required />
+            </label>
+            <label>
+              Sessions (comma-separated)
+              <input name="sessions" required />
+            </label>
+            <button type="submit">Update</button>
+          </form>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h3>Peers</h3>
+            <ul id="peers-list" class="list"></ul>
+          </div>
+          <div class="card">
+            <h3>Access Grants</h3>
+            <ul id="access-list" class="list"></ul>
+          </div>
+          <div class="card">
+            <h3>Invites</h3>
+            <ul id="invites-list" class="list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Plugins & Skills</h2>
+        <div class="grid">
+          <form id="plugin-install" class="card">
+            <h3>Install Plugin</h3>
+            <label>
+              Source
+              <input name="source" required />
+            </label>
+            <button type="submit">Install</button>
+          </form>
+          <form id="skill-install" class="card">
+            <h3>Install Skill</h3>
+            <label>
+              Source
+              <input name="source" required />
+            </label>
+            <button type="submit">Install</button>
+          </form>
+        </div>
+        <div class="grid">
+          <div class="card">
+            <h3>Plugins</h3>
+            <ul id="plugins-list" class="list"></ul>
+          </div>
+          <div class="card">
+            <h3>Skills</h3>
+            <ul id="skills-list" class="list"></ul>
+          </div>
+          <div class="card">
+            <h3>Plugin Extensions</h3>
+            <ul id="extensions-list" class="list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Config Snapshot</h2>
+        <div class="card">
+          <pre id="config-json">Loading...</pre>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
