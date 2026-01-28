@@ -1015,6 +1015,11 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     }
     process.exit(result.code);
   } else if (command === "plugin") {
+    // Show help if no subcommand, without requiring daemon
+    if (!subcommand) {
+      help();
+      return;
+    }
     await requireDaemon();
     if (subcommand === "registry") {
       const regCmd = args[0];
