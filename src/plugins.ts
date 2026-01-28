@@ -257,7 +257,7 @@ function addInstalledPlugin(plugin: InstalledPlugin): void {
 function createPluginContext(
   plugin: InstalledPlugin,
   injectors: {
-    inject: (session: string, message: string, onStream?: StreamCallback) => Promise<string>;
+    inject: (session: string, message: string, options?: import("./types.js").PluginInjectOptions) => Promise<string>;
     injectPeer: (peer: string, session: string, message: string) => Promise<string>;
     getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
     getSessions: () => string[];
@@ -267,8 +267,8 @@ function createPluginContext(
   const pluginName = plugin.name;
 
   return {
-    inject: (session: string, message: string, onStream?: StreamCallback) =>
-      injectors.inject(session, message, onStream),
+    inject: (session: string, message: string, options?: import("./types.js").PluginInjectOptions) =>
+      injectors.inject(session, message, options),
     injectPeer: injectors.injectPeer,
     getIdentity: injectors.getIdentity,
     getSessions: injectors.getSessions,

@@ -378,10 +378,18 @@ export interface ConfigSchema {
   fields: ConfigField[];
 }
 
+export interface PluginInjectOptions {
+  silent?: boolean;
+  onStream?: StreamCallback;
+  from?: string;
+  channel?: ChannelRef;
+  images?: string[];
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   // Supports multimodal messages with images
-  inject(session: string, message: string | MultimodalMessage, onStream?: StreamCallback): Promise<string>;
+  inject(session: string, message: string | MultimodalMessage, options?: PluginInjectOptions): Promise<string>;
 
   // Inject to peer's session, get response
   injectPeer(peer: string, session: string, message: string): Promise<string>;

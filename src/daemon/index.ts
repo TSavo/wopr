@@ -134,8 +134,8 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   // Create injectors for plugins
   const identity = getIdentity();
   const injectors = {
-    inject: async (session: string, message: string, onStream?: StreamCallback): Promise<string> => {
-      const result = await inject(session, message, { silent: true, onStream });
+    inject: async (session: string, message: string, options?: import("../types.js").PluginInjectOptions): Promise<string> => {
+      const result = await inject(session, message, { silent: true, ...options });
       return result.response;
     },
     injectPeer: async (peer: string, session: string, message: string): Promise<string> => {
