@@ -6,9 +6,16 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, appendFileSync } from "fs";
 import { join } from "path";
 import { SESSIONS_DIR, SESSIONS_FILE } from "../paths.js";
-import type { StreamCallback, StreamMessage, ConversationEntry } from "../types.js";
+import type { StreamCallback, StreamMessage, ConversationEntry, ChannelRef } from "../types.js";
 import type { ProviderConfig } from "../types/provider.js";
-import { emitInjection, emitStream, getContextProvider } from "../plugins.js";
+import {
+  applyIncomingMiddlewares,
+  applyOutgoingMiddlewares,
+  emitInjection,
+  emitStream,
+  getChannel,
+  getContextProvider,
+} from "../plugins.js";
 import { discoverSkills, formatSkillsXml } from "./skills.js";
 import { providerRegistry } from "./providers.js";
 
@@ -108,6 +115,7 @@ export interface InjectOptions {
   silent?: boolean;
   onStream?: StreamCallback;
   from?: string;
+  channel?: ChannelRef;
 }
 
 export interface InjectResult {
@@ -127,6 +135,7 @@ export async function inject(
   const silent = options?.silent ?? false;
   const onStream = options?.onStream;
   const from = options?.from ?? "cli";
+  const channel = options?.channel;
   const collected: string[] = [];
   let sessionId = existingSessionId || "";
   let cost = 0;
@@ -140,39 +149,65 @@ export async function inject(
     }
   }
 
-  // Check if a plugin provides context for this session (e.g., Discord channel history)
-  const contextProvider = getContextProvider(name);
   let conversationContext = "";
-  if (contextProvider) {
-    try {
+  const channelAdapter = channel ? getChannel(channel) : undefined;
+  const contextProvider = channelAdapter ? undefined : getContextProvider(name);
+
+  try {
+    if (channelAdapter) {
+      conversationContext = await channelAdapter.getContext();
+      if (!silent && conversationContext) {
+        console.log(`[wopr] Channel context added conversation history`);
+      }
+    } else if (contextProvider) {
       conversationContext = await contextProvider.getContext(name);
       if (!silent && conversationContext) {
         console.log(`[wopr] Context provider added conversation history`);
       }
-      // Log context to conversation log
-      if (conversationContext) {
-        appendToConversationLog(name, {
-          ts: Date.now(),
-          from: "system",
-          content: conversationContext,
-          type: "context"
-        });
-      }
-    } catch (err: any) {
-      console.error(`[wopr] Context provider error: ${err.message}`);
     }
+
+    if (conversationContext) {
+      appendToConversationLog(name, {
+        ts: Date.now(),
+        from: "system",
+        content: conversationContext,
+        type: "context",
+        channel,
+      });
+    }
+  } catch (err: any) {
+    console.error(`[wopr] Context provider error: ${err.message}`);
   }
 
   // Log incoming message to conversation log
+  const middlewareMessage = await applyIncomingMiddlewares({
+    session: name,
+    from,
+    message,
+    channel,
+  });
+
+  if (middlewareMessage === null) {
+    appendToConversationLog(name, {
+      ts: Date.now(),
+      from: "system",
+      content: "Message blocked by middleware.",
+      type: "middleware",
+      channel,
+    });
+    return { response: "", sessionId, cost: 0 };
+  }
+
   appendToConversationLog(name, {
     ts: Date.now(),
     from,
-    content: message,
-    type: "message"
+    content: middlewareMessage,
+    type: "message",
+    channel,
   });
 
   // Prepend conversation context to message
-  const fullMessage = conversationContext ? `${conversationContext}${message}` : message;
+  const fullMessage = conversationContext ? `${conversationContext}${middlewareMessage}` : middlewareMessage;
 
   const skills = discoverSkills();
   const skillsXml = formatSkillsXml(skills);
@@ -269,7 +304,27 @@ export async function inject(
     }
   }
 
-  const response = collected.join("\n");
+  let response = collected.join("\n");
+
+  const middlewareResponse = await applyOutgoingMiddlewares({
+    session: name,
+    from,
+    response,
+    channel,
+  });
+
+  if (middlewareResponse === null) {
+    appendToConversationLog(name, {
+      ts: Date.now(),
+      from: "system",
+      content: "Response blocked by middleware.",
+      type: "middleware",
+      channel,
+    });
+    return { response: "", sessionId, cost };
+  }
+
+  response = middlewareResponse;
 
   // Log response to conversation log
   if (response) {
@@ -277,7 +332,8 @@ export async function inject(
       ts: Date.now(),
       from: "WOPR",
       content: response,
-      type: "response"
+      type: "response",
+      channel,
     });
   }
 

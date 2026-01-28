@@ -111,6 +111,8 @@ Usage:
   wopr invite <peer-pubkey> <session>        Create invite for specific peer
   wopr invite claim <token>                  Claim an invite (P2P handshake)
 
+  wopr p2p friend add <peer-pubkey> [sess]   Create invite and optionally claim theirs
+
   wopr access                                Who can inject to your sessions
   wopr revoke <peer>                         Revoke someone's access
 
@@ -861,6 +863,50 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     } else {
       help();
     }
+  } else if (command === "p2p") {
+    await requireDaemon();
+    if (subcommand === "friend" && args[0] === "add") {
+      const peerPubkey = args[1];
+      if (!peerPubkey) {
+        console.error("Usage: wopr p2p friend add <peer-pubkey> [session...] [--token <token>]");
+        process.exit(1);
+      }
+
+      let token: string | undefined;
+      const sessions: string[] = [];
+      for (let i = 2; i < args.length; i += 1) {
+        if (args[i] === "--token") {
+          token = args[i + 1];
+          i += 1;
+          continue;
+        }
+        sessions.push(args[i]);
+      }
+
+      const grantSessions = sessions.length > 0 ? sessions : ["*"];
+      const invite = await client.createInvite(peerPubkey, grantSessions);
+
+      console.log(`Invite created for ${shortKey(peerPubkey)}`);
+      console.log(invite.token);
+      console.log(`Sessions: ${grantSessions.join(", ")}`);
+
+      if (token) {
+        console.log("\nClaiming their invite (peer must be online)...");
+        const result = await client.claimInvite(token);
+        if (result.code === EXIT_OK) {
+          console.log(`Success! Added peer: ${shortKey(result.peerKey!)}`);
+          console.log(`Sessions: ${result.sessions?.join(", ")}`);
+        } else {
+          console.error(`Failed to claim: ${result.message}`);
+          process.exit(result.code);
+        }
+      } else {
+        console.log("\nTo complete the handshake, rerun with their token:");
+        console.log("  wopr p2p friend add <peer-pubkey> --token <their-token>");
+      }
+    } else {
+      help();
+    }
   } else if (command === "invite") {
     await requireDaemon();
     if (subcommand === "claim") {
@@ -1010,6 +1056,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           if (!args[0]) {
             console.error("Usage: wopr plugin install <source>");
             console.error("  npm:      wopr plugin install wopr-plugin-discord");
+            console.error("  npm:      wopr plugin install wopr-p2p");
             console.error("  github:   wopr plugin install github:user/wopr-discord");
             console.error("  local:    wopr plugin install ./my-plugin");
             process.exit(1);

@@ -67,6 +67,14 @@ wopr session delete dev
 
 Sessions can be injected into locally or by authorized peers over P2P.
 
+### Channels
+
+Channels are external message sources/sinks (Discord, P2P peers, etc.) that provide
+context and map into a session. Sessions remain the agent-native unit of memory,
+while channels describe *how* messages arrive and where responses go.
+Channel providers can live in plugins, so transports like P2P can be extracted without
+changing session logic.
+
 ### Invites & Trust
 
 Trust is explicit and cryptographically bound:

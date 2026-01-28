@@ -27,7 +27,7 @@ import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast
 // Core imports for daemon functionality
 import { getCrons, saveCrons, shouldRunCron } from "../core/cron.js";
 import { inject } from "../core/sessions.js";
-import { createP2PListener } from "../p2p.js";
+import { sendP2PChannelMessage, startP2PChannel } from "../channels/p2p-channel.js";
 import {
   initDiscovery, joinTopic, updateProfile, shutdownDiscovery
 } from "../discovery.js";
@@ -36,7 +36,6 @@ import { loadAllPlugins, shutdownAllPlugins } from "../plugins.js";
 import { getPeers } from "../trust.js";
 import { shortKey } from "../identity.js";
 import type { StreamCallback, Peer } from "../types.js";
-import { sendP2PInject } from "../p2p.js";
 
 // Provider registry imports
 import { providerRegistry } from "../core/providers.js";
@@ -145,7 +144,7 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
       return result.response;
     },
     injectPeer: async (peer: string, session: string, message: string): Promise<string> => {
-      const result = await sendP2PInject(peer, session, message);
+      const result = await sendP2PChannelMessage(peer, session, message);
       return result.message || "";
     },
     getIdentity: () => identity ? {
@@ -209,9 +208,9 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   cronTick();
 
   // Start P2P listener
-  const swarm = createP2PListener(
-    async (session, message, peerKey) => {
-      await inject(session, message, { silent: true, from: peerKey || "p2p" });
+  const swarm = startP2PChannel(
+    async (session, message, peerKey, channel) => {
+      await inject(session, message, { silent: true, from: peerKey || "p2p", channel });
     },
     daemonLog
   );
