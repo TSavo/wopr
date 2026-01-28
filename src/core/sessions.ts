@@ -295,6 +295,7 @@ export async function inject(
   }
 
   for await (const msg of q) {
+    console.log(`[inject] Got msg type: ${msg.type}`, JSON.stringify(msg).substring(0, 200));
     switch (msg.type) {
       case "system":
         if (msg.subtype === "init") {
@@ -304,7 +305,9 @@ export async function inject(
         }
         break;
       case "assistant":
+        console.log(`[inject] Processing assistant msg, content blocks: ${msg.message?.content?.length || 0}`);
         for (const block of msg.message.content) {
+          console.log(`[inject]   Block type: ${block.type}`);
           if (block.type === "text") {
             collected.push(block.text);
             if (!silent) console.log(block.text);
