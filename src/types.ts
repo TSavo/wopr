@@ -290,6 +290,15 @@ export interface ChannelAdapter {
   send(message: string): Promise<void>;
 }
 
+// Web UI Extension - plugins register navigation links to extend the UI
+export interface WebUiExtension {
+  id: string;           // Unique identifier (scoped to plugin)
+  title: string;        // Display name in UI
+  url: string;          // URL to open (can be relative or absolute)
+  description?: string; // Optional tooltip/description
+  category?: string;    // Optional grouping (e.g., "core", "integrations", "tools")
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   inject(session: string, message: string, onStream?: StreamCallback): Promise<string>;
@@ -327,6 +336,11 @@ export interface WOPRPluginContext {
   registerMiddleware(middleware: MessageMiddleware): void;
   unregisterMiddleware(name: string): void;
   getMiddlewares(): MessageMiddleware[];
+
+  // Web UI extensions - plugins register navigation links
+  registerWebUiExtension(extension: WebUiExtension): void;
+  unregisterWebUiExtension(id: string): void;
+  getWebUiExtensions(): WebUiExtension[];
 
   // Plugin's own config
   getConfig<T = any>(): T;
@@ -378,7 +392,8 @@ export interface InstalledPlugin {
 export interface PluginRegistryEntry {
   name: string;
   url: string;
-  addedAt: number;
+  enabled: boolean;
+  lastSync: number;
 }
 
 // Exit codes

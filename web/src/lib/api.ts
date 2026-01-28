@@ -52,6 +52,14 @@ export interface StreamEvent {
   ts?: number;
 }
 
+export interface WebUiExtension {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  category?: string;
+}
+
 export interface InjectResponse {
   session: string;
   sessionId: string;
@@ -138,6 +146,11 @@ export const api = {
   // Plugins
   async getPlugins(): Promise<{ plugins: any[] }> {
     return request("/plugins");
+  },
+
+  // Web UI Extensions
+  async getWebUiExtensions(): Promise<{ extensions: WebUiExtension[] }> {
+    return request("/plugins/ui");
   },
 
   // Identity

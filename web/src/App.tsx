@@ -1,5 +1,5 @@
 import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
-import { api, type Session, type StreamEvent } from "./lib/api";
+import { api, type Session, type StreamEvent, type WebUiExtension } from "./lib/api";
 import Settings from "./components/Settings";
 
 const App: Component = () => {
@@ -10,6 +10,7 @@ const App: Component = () => {
   const [response, setResponse] = createSignal("");
   const [streaming, setStreaming] = createSignal(false);
   const [connected, setConnected] = createSignal(false);
+  const [extensions, setExtensions] = createSignal<WebUiExtension[]>([]);
 
   let ws: WebSocket | null = null;
 
@@ -17,6 +18,14 @@ const App: Component = () => {
     // Load sessions
     const data = await api.getSessions();
     setSessions(data.sessions);
+
+    // Load plugin extensions
+    try {
+      const extData = await api.getWebUiExtensions();
+      setExtensions(extData.extensions);
+    } catch (err) {
+      console.error("Failed to load extensions:", err);
+    }
 
     // Connect WebSocket
     connectWebSocket();
@@ -153,6 +162,33 @@ const App: Component = () => {
                 )}
               </For>
             </ul>
+
+            {/* Plugin Extensions */}
+            <Show when={extensions().length > 0}>
+              <div class="mt-6">
+                <h2 class="text-sm font-semibold text-wopr-muted uppercase mb-3">Extensions</h2>
+                <ul class="space-y-1">
+                  <For each={extensions()}>
+                    {(ext) => (
+                      <li>
+                        <a
+                          href={ext.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="w-full text-left px-3 py-2 rounded text-sm hover:bg-wopr-border text-wopr-text flex items-center gap-2"
+                          title={ext.description}
+                        >
+                          <span>{ext.title}</span>
+                          <svg class="w-3 h-3 text-wopr-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </div>
+            </Show>
           </aside>
         </Show>
 

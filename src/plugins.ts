@@ -22,6 +22,7 @@ import {
   MessageMiddleware,
   MiddlewareInput,
   MiddlewareOutput,
+  WebUiExtension,
 } from "./types.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
@@ -39,6 +40,7 @@ const loadedPlugins: Map<string, { plugin: WOPRPlugin; context: WOPRPluginContex
 const contextProviders: Map<string, ContextProvider> = new Map();
 const channelAdapters: Map<string, ChannelAdapter> = new Map();
 const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
+const webUiExtensions: Map<string, WebUiExtension> = new Map();
 
 function channelKey(channel: ChannelRef): string {
   return `${channel.type}:${channel.id}`;
@@ -48,78 +50,70 @@ function channelKey(channel: ChannelRef): string {
 // Plugin Installation
 // ============================================================================
 
-function ensurePluginsDir(): void {
-  if (!existsSync(PLUGINS_DIR)) {
-    mkdirSync(PLUGINS_DIR, { recursive: true });
-  }
-}
-
-function getInstalledPlugins(): InstalledPlugin[] {
-  if (!existsSync(PLUGINS_FILE)) {
-    return [];
-  }
-  return JSON.parse(readFileSync(PLUGINS_FILE, "utf-8"));
-}
-
-function saveInstalledPlugins(plugins: InstalledPlugin[]): void {
-  writeFileSync(PLUGINS_FILE, JSON.stringify(plugins, null, 2));
+export interface InstallResult {
+  name: string;
+  version: string;
+  path: string;
+  enabled: boolean;
 }
 
 export async function installPlugin(source: string): Promise<InstalledPlugin> {
-  ensurePluginsDir();
+  mkdirSync(PLUGINS_DIR, { recursive: true });
 
-  let plugin: InstalledPlugin;
-
+  // Determine source type
   if (source.startsWith("github:")) {
-    // GitHub: github:user/repo
-    const repo = source.slice(7);
-    const name = repo.split("/").pop()!.replace(/^wopr-plugin-/, "").replace(/^wopr-/, "");
-    const pluginDir = join(PLUGINS_DIR, name);
-
-    console.log(`Cloning ${repo}...`);
-    execSync(`git clone https://github.com/${repo}.git "${pluginDir}"`, { stdio: "inherit" });
-
-    // Install dependencies if package.json exists
-    if (existsSync(join(pluginDir, "package.json"))) {
-      console.log("Installing dependencies...");
-      execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+    // GitHub repo
+    const repo = source.replace("github:", "");
+    const pluginDir = join(PLUGINS_DIR, repo.split("/")[1] || repo);
+    
+    // Clone or pull
+    if (existsSync(pluginDir)) {
+      execSync("git pull", { cwd: pluginDir, stdio: "inherit" });
+    } else {
+      execSync(`git clone https://github.com/${repo} "${pluginDir}"`, { stdio: "inherit" });
     }
 
-    const pkg = existsSync(join(pluginDir, "package.json"))
-      ? JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf-8"))
-      : { version: "0.0.0" };
+    // Read package.json for metadata
+    const pkgPath = join(pluginDir, "package.json");
+    const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
 
-    plugin = {
-      name,
+    const installed: InstalledPlugin = {
+      name: pkg.name || repo.split("/")[1] || repo,
       version: pkg.version || "0.0.0",
       description: pkg.description,
       source: "github",
       path: pluginDir,
-      enabled: true,
+      enabled: false,
       installedAt: Date.now(),
     };
-  } else if (source.startsWith("./") || source.startsWith("/")) {
-    // Local directory
-    const pluginDir = resolve(source);
+
+    addInstalledPlugin(installed);
+    return installed;
+  } else if (source.startsWith("./") || source.startsWith("/") || source.startsWith("~/")) {
+    // Local path
+    const resolved = resolve(source.replace("~", process.env.HOME || "~"));
+    const pluginDir = join(PLUGINS_DIR, resolved.split("/").pop() || "plugin");
+    
+    // Symlink or copy
     if (!existsSync(pluginDir)) {
-      throw new Error(`Plugin directory not found: ${pluginDir}`);
+      execSync(`ln -s "${resolved}" "${pluginDir}"`);
     }
 
-    const pkg = existsSync(join(pluginDir, "package.json"))
-      ? JSON.parse(readFileSync(join(pluginDir, "package.json"), "utf-8"))
-      : { name: source.split("/").pop(), version: "0.0.0" };
+    const pkgPath = join(pluginDir, "package.json");
+    const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
 
-    const name = pkg.name?.replace(/^wopr-plugin-/, "").replace(/^wopr-/, "") || source.split("/").pop()!;
-
-    plugin = {
-      name,
+    const installed: InstalledPlugin = {
+      name: pkg.name || resolved.split("/").pop() || "plugin",
       version: pkg.version || "0.0.0",
       description: pkg.description,
       source: "local",
       path: pluginDir,
-      enabled: true,
+      enabled: false,
       installedAt: Date.now(),
     };
+
+    addInstalledPlugin(installed);
+    return installed;
   } else {
     // npm package - normalize to wopr-plugin-<name> format (accept wopr-<name> too)
     const shortName = source.replace(/^wopr-plugin-/, "").replace(/^wopr-/, "");
@@ -129,91 +123,92 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     const pluginDir = join(PLUGINS_DIR, shortName);
     mkdirSync(pluginDir, { recursive: true });
 
-    console.log(`Installing ${npmPackage} from npm...`);
-    execSync(`npm install ${npmPackage}`, { cwd: pluginDir, stdio: "inherit" });
+    // Use npm to install
+    execSync(`npm install "${npmPackage}"`, { cwd: pluginDir, stdio: "inherit" });
 
+    // Read installed package metadata
     const pkgPath = join(pluginDir, "node_modules", npmPackage, "package.json");
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+    const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
 
-    plugin = {
+    const installed: InstalledPlugin = {
       name: shortName,
-      version: pkg.version,
+      version: pkg.version || "0.0.0",
       description: pkg.description,
       source: "npm",
       path: join(pluginDir, "node_modules", npmPackage),
-      enabled: true,
+      enabled: false,
       installedAt: Date.now(),
     };
+
+    addInstalledPlugin(installed);
+    return installed;
   }
-
-  // Add to installed plugins
-  const plugins = getInstalledPlugins().filter((p) => p.name !== plugin.name);
-  plugins.push(plugin);
-  saveInstalledPlugins(plugins);
-
-  console.log(`Installed plugin: ${plugin.name} v${plugin.version}`);
-  return plugin;
 }
 
-export async function removePlugin(name: string): Promise<void> {
-  const plugins = getInstalledPlugins();
-  const plugin = plugins.find((p) => p.name === name);
+export function removePlugin(name: string): boolean {
+  return uninstallPlugin(name);
+}
 
-  if (!plugin) {
-    throw new Error(`Plugin not found: ${name}`);
-  }
+export function uninstallPlugin(name: string): boolean {
+  const installed = getInstalledPlugins();
+  const plugin = installed.find(p => p.name === name);
+  if (!plugin) return false;
 
-  // Unload if loaded
-  if (loadedPlugins.has(name)) {
-    await unloadPlugin(name);
-  }
-
-  // Remove from list
-  saveInstalledPlugins(plugins.filter((p) => p.name !== name));
-
-  // Remove directory (except for local plugins)
-  if (plugin.source !== "local" && existsSync(plugin.path)) {
+  // Remove files
+  if (existsSync(plugin.path)) {
     execSync(`rm -rf "${plugin.path}"`);
   }
 
-  console.log(`Removed plugin: ${name}`);
+  // Remove from registry
+  const remaining = installed.filter(p => p.name !== name);
+  writeFileSync(PLUGINS_FILE, JSON.stringify(remaining, null, 2));
+
+  return true;
 }
 
-export function enablePlugin(name: string): void {
-  const plugins = getInstalledPlugins();
-  const plugin = plugins.find((p) => p.name === name);
-  if (!plugin) throw new Error(`Plugin not found: ${name}`);
+export function enablePlugin(name: string): boolean {
+  const installed = getInstalledPlugins();
+  const plugin = installed.find(p => p.name === name);
+  if (!plugin) return false;
+
   plugin.enabled = true;
-  saveInstalledPlugins(plugins);
+  writeFileSync(PLUGINS_FILE, JSON.stringify(installed, null, 2));
+  return true;
 }
 
-export function disablePlugin(name: string): void {
-  const plugins = getInstalledPlugins();
-  const plugin = plugins.find((p) => p.name === name);
-  if (!plugin) throw new Error(`Plugin not found: ${name}`);
+export function disablePlugin(name: string): boolean {
+  const installed = getInstalledPlugins();
+  const plugin = installed.find(p => p.name === name);
+  if (!plugin) return false;
+
   plugin.enabled = false;
-  saveInstalledPlugins(plugins);
+  writeFileSync(PLUGINS_FILE, JSON.stringify(installed, null, 2));
+  return true;
 }
 
 export function listPlugins(): InstalledPlugin[] {
   return getInstalledPlugins();
 }
 
-// ============================================================================
-// Plugin Loading & Context
-// ============================================================================
-
-function createPluginLogger(name: string): PluginLogger {
-  const prefix = `[plugin:${name}]`;
-  return {
-    info: (msg, ...args) => console.log(prefix, msg, ...args),
-    warn: (msg, ...args) => console.warn(prefix, msg, ...args),
-    error: (msg, ...args) => console.error(prefix, msg, ...args),
-    debug: (msg, ...args) => {
-      if (process.env.WOPR_DEBUG) console.log(prefix, "[debug]", msg, ...args);
-    },
-  };
+export function getInstalledPlugins(): InstalledPlugin[] {
+  if (!existsSync(PLUGINS_FILE)) return [];
+  return JSON.parse(readFileSync(PLUGINS_FILE, "utf-8"));
 }
+
+function addInstalledPlugin(plugin: InstalledPlugin): void {
+  const installed = getInstalledPlugins();
+  const existing = installed.findIndex(p => p.name === plugin.name);
+  if (existing >= 0) {
+    installed[existing] = plugin;
+  } else {
+    installed.push(plugin);
+  }
+  writeFileSync(PLUGINS_FILE, JSON.stringify(installed, null, 2));
+}
+
+// ============================================================================
+// Plugin Context Creation
+// ============================================================================
 
 function createPluginContext(
   plugin: InstalledPlugin,
@@ -283,6 +278,18 @@ function createPluginContext(
       return Array.from(messageMiddlewares.values());
     },
 
+    registerWebUiExtension(extension: WebUiExtension) {
+      webUiExtensions.set(`${pluginName}:${extension.id}`, extension);
+    },
+
+    unregisterWebUiExtension(id: string) {
+      webUiExtensions.delete(`${pluginName}:${id}`);
+    },
+
+    getWebUiExtensions() {
+      return Array.from(webUiExtensions.values());
+    },
+
     getConfig<T>(): T {
       // Load from central config
       const cfg = centralConfig.get();
@@ -337,20 +344,16 @@ export async function loadPlugin(
   const module = await import(entryPoint);
   const plugin: WOPRPlugin = module.default || module;
 
-  if (!plugin.name || !plugin.version) {
-    throw new Error(`Invalid plugin: missing name or version`);
-  }
-
   // Create context
   const context = createPluginContext(installed, injectors);
 
-  // Initialize if has init
+  // Store
+  loadedPlugins.set(installed.name, { plugin, context });
+
+  // Initialize if needed
   if (plugin.init) {
     await plugin.init(context);
   }
-
-  // Store loaded plugin
-  loadedPlugins.set(installed.name, { plugin, context });
 
   return plugin;
 }
@@ -359,108 +362,77 @@ export async function unloadPlugin(name: string): Promise<void> {
   const loaded = loadedPlugins.get(name);
   if (!loaded) return;
 
+  // Shutdown if needed
   if (loaded.plugin.shutdown) {
     await loaded.plugin.shutdown();
   }
 
+  // Clean up registrations
+  if (loaded.plugin.commands) {
+    // Commands are registered per-plugin, no global registry to clean
+  }
+
   loadedPlugins.delete(name);
-}
-
-export async function loadAllPlugins(injectors: {
-  inject: (session: string, message: string, onStream?: StreamCallback) => Promise<string>;
-  injectPeer: (peer: string, session: string, message: string) => Promise<string>;
-  getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
-  getSessions: () => string[];
-  getPeers: () => Peer[];
-}): Promise<void> {
-  const plugins = getInstalledPlugins().filter((p) => p.enabled);
-
-  for (const installed of plugins) {
-    try {
-      await loadPlugin(installed, injectors);
-      console.log(`Loaded plugin: ${installed.name}`);
-    } catch (err) {
-      console.error(`Failed to load plugin ${installed.name}:`, err);
-    }
-  }
-}
-
-export async function shutdownAllPlugins(): Promise<void> {
-  for (const [name] of loadedPlugins) {
-    await unloadPlugin(name);
-  }
-}
-
-// Emit injection event to all plugins (after response complete)
-export function emitInjection(session: string, from: string, message: string, response: string): void {
-  pluginEvents.emit("injection", session, from, message, response);
-}
-
-// Emit stream event to all plugins (real-time as chunks arrive)
-export function emitStream(session: string, from: string, message: StreamMessage): void {
-  const event: SessionStreamEvent = { session, from, message };
-  pluginEvents.emit("stream", event);
-}
-
-// ============================================================================
-// CLI Command Collection
-// ============================================================================
-
-export function getPluginCommands(): Map<string, { plugin: string; command: PluginCommand }> {
-  const commands = new Map<string, { plugin: string; command: PluginCommand }>();
-
-  // From installed plugins (for CLI help even when not loaded)
-  for (const installed of getInstalledPlugins()) {
-    const loaded = loadedPlugins.get(installed.name);
-    if (loaded?.plugin.commands) {
-      for (const cmd of loaded.plugin.commands) {
-        commands.set(`${installed.name}:${cmd.name}`, { plugin: installed.name, command: cmd });
-      }
-    }
-  }
-
-  return commands;
 }
 
 export function getLoadedPlugin(name: string): { plugin: WOPRPlugin; context: WOPRPluginContext } | undefined {
   return loadedPlugins.get(name);
 }
 
+export function getWebUiExtensions(): WebUiExtension[] {
+  return Array.from(webUiExtensions.values());
+}
+
 // ============================================================================
 // Plugin Registry
 // ============================================================================
 
-function getRegistries(): PluginRegistryEntry[] {
+export function getPluginRegistries(): PluginRegistryEntry[] {
   if (!existsSync(REGISTRIES_FILE)) return [];
   return JSON.parse(readFileSync(REGISTRIES_FILE, "utf-8"));
 }
 
-function saveRegistries(registries: PluginRegistryEntry[]): void {
+export function addRegistry(url: string, name?: string): PluginRegistryEntry {
+  const registries = getPluginRegistries();
+  const entry: PluginRegistryEntry = {
+    url,
+    name: name || new URL(url).hostname,
+    enabled: true,
+    lastSync: 0,
+  };
+  registries.push(entry);
   writeFileSync(REGISTRIES_FILE, JSON.stringify(registries, null, 2));
+  return entry;
 }
 
-export function addRegistry(name: string, url: string): void {
-  const registries = getRegistries().filter((r) => r.name !== name);
-  registries.push({ name, url, addedAt: Date.now() });
-  saveRegistries(registries);
-}
-
-export function removeRegistry(name: string): void {
-  saveRegistries(getRegistries().filter((r) => r.name !== name));
+export function removeRegistry(url: string): boolean {
+  const registries = getPluginRegistries();
+  const filtered = registries.filter(r => r.url !== url);
+  if (filtered.length === registries.length) return false;
+  writeFileSync(REGISTRIES_FILE, JSON.stringify(filtered, null, 2));
+  return true;
 }
 
 export function listRegistries(): PluginRegistryEntry[] {
-  return getRegistries();
+  return getPluginRegistries();
 }
 
 export async function searchPlugins(query: string): Promise<any[]> {
-  // Search npm for wopr-plugin-* packages
-  try {
-    const result = execSync(`npm search wopr-plugin-${query} --json`, { encoding: "utf-8" });
-    return JSON.parse(result);
-  } catch {
-    return [];
-  }
+  // TODO: Implement search across registries
+  // For now, return empty results
+  return [];
+}
+
+// ============================================================================
+// Event Emitters
+// ============================================================================
+
+export function emitInjection(session: string, from: string, message: string, response: string) {
+  pluginEvents.emit("injection", session, from, message, response);
+}
+
+export function emitStream(session: string, from: string, message: StreamMessage) {
+  pluginEvents.emit("stream", { session, from, message });
 }
 
 // ============================================================================
@@ -507,4 +479,63 @@ export async function applyOutgoingMiddlewares(output: MiddlewareOutput): Promis
     response = result;
   }
   return response;
+}
+
+// ============================================================================
+// Plugin Logger
+// ============================================================================
+
+function createPluginLogger(pluginName: string): PluginLogger {
+  return {
+    info: (message: string, ...args: any[]) => {
+      console.log(`[${pluginName}] ${message}`, ...args);
+    },
+    warn: (message: string, ...args: any[]) => {
+      console.warn(`[${pluginName}] ${message}`, ...args);
+    },
+    error: (message: string, ...args: any[]) => {
+      console.error(`[${pluginName}] ${message}`, ...args);
+    },
+    debug: (message: string, ...args: any[]) => {
+      if (process.env.DEBUG) {
+        console.debug(`[${pluginName}] ${message}`, ...args);
+      }
+    },
+  };
+}
+
+// ============================================================================
+// Batch Plugin Operations
+// ============================================================================
+
+export async function loadAllPlugins(injectors: {
+  inject: (session: string, message: string, onStream?: StreamCallback) => Promise<string>;
+  injectPeer: (peer: string, session: string, message: string) => Promise<string>;
+  getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
+  getSessions: () => string[];
+  getPeers: () => Peer[];
+}): Promise<void> {
+  const installed = getInstalledPlugins();
+  
+  for (const plugin of installed) {
+    if (!plugin.enabled) continue;
+    
+    try {
+      await loadPlugin(plugin, injectors);
+      console.log(`[plugins] Loaded: ${plugin.name}`);
+    } catch (err) {
+      console.error(`[plugins] Failed to load ${plugin.name}:`, err);
+    }
+  }
+}
+
+export async function shutdownAllPlugins(): Promise<void> {
+  for (const [name] of loadedPlugins) {
+    try {
+      await unloadPlugin(name);
+      console.log(`[plugins] Unloaded: ${name}`);
+    } catch (err) {
+      console.error(`[plugins] Failed to unload ${name}:`, err);
+    }
+  }
 }

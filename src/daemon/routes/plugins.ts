@@ -13,6 +13,7 @@ import {
   addRegistry,
   removeRegistry,
   listRegistries,
+  getWebUiExtensions,
 } from "../../plugins.js";
 
 export const pluginsRouter = new Hono();
@@ -21,7 +22,7 @@ export const pluginsRouter = new Hono();
 pluginsRouter.get("/", (c) => {
   const plugins = listPlugins();
   return c.json({
-    plugins: plugins.map(p => ({
+    plugins: plugins.map((p: { name: string; version: string; description?: string; source: string; enabled: boolean; installedAt: number }) => ({
       name: p.name,
       version: p.version,
       description: p.description || null,
@@ -30,6 +31,12 @@ pluginsRouter.get("/", (c) => {
       installedAt: p.installedAt,
     })),
   });
+});
+
+// List plugin-provided Web UI extensions
+pluginsRouter.get("/ui", (c) => {
+  const extensions = getWebUiExtensions();
+  return c.json({ extensions });
 });
 
 // Install plugin
