@@ -97,7 +97,7 @@ interface Peer {
 
 ## Session Model
 
-Sessions are named Claude conversations:
+Sessions are named AI conversations:
 
 ```
 Session "dev"
@@ -112,14 +112,17 @@ Session "dev"
 **Injection:** Anyone with access can inject messages into a session. The AI processes them with full tool access.
 
 ```bash
-# Local injection
+# Local injection (gets AI response)
 wopr session inject dev "Review this code"
+
+# Log context without AI response
+wopr session log dev "User prefers TypeScript"
 
 # P2P injection (from authorized peer)
 wopr inject alice:dev "Review this code"
 ```
 
-Both result in the same thing: a message sent to the Claude session.
+Inject gets an AI response; log adds to history without triggering AI (useful for context).
 
 ## Channel Model
 
@@ -159,6 +162,25 @@ Discord channel #dev ──┐
 P2P peer alice         ├─> Session "dev"
 Local CLI              ┘
 ```
+
+## Provider System
+
+WOPR supports multiple AI providers through a plugin-based registry:
+
+```
+Provider Registry
+├── kimi (Moonshot AI) - OAuth-based
+├── anthropic (Claude) - API key
+├── openai (Codex) - API key
+└── (more via plugins)
+```
+
+**Auto-detection:** WOPR automatically uses the first available provider. No configuration needed if you have at least one provider set up.
+
+**Provider plugins** register themselves at daemon startup and expose:
+- Credential type (oauth, api-key, custom)
+- Health check
+- Client factory for queries
 
 ## P2P Layer
 
@@ -467,6 +489,92 @@ Incoming P2P connection
           v
 ┌─────────────────────┐
 │ 7. Inject to        │
-│    Claude session   │
+│    AI session       │
 └─────────────────────┘
+```
+
+## Plugin System
+
+WOPR supports TypeScript/JavaScript plugins for extending functionality:
+
+### Plugin Types
+
+1. **Provider plugins** - Add AI providers (Kimi, Anthropic, OpenAI, etc.)
+2. **Channel plugins** - Add message transports (Discord, Slack, etc.)
+3. **Middleware plugins** - Process/modify messages
+
+### Plugin Context
+
+Plugins receive a context object with:
+
+```typescript
+interface WOPRPluginContext {
+  // Core functions
+  inject(session, message, options)   // Get AI response
+  logMessage(session, message, opts)  // Log without AI response
+  injectPeer(peer, session, message)  // P2P messaging
+  
+  // Identity & sessions
+  getIdentity()
+  getSessions()
+  getPeers()
+  
+  // Config
+  getConfig()
+  saveConfig(config)
+  registerConfigSchema(pluginId, schema)
+  
+  // Events
+  on("injection", handler)
+  on("stream", handler)
+  
+  // Logging
+  log.info(...)
+  log.warn(...)
+  log.error(...)
+}
+```
+
+### Example: Discord Plugin
+
+The Discord plugin demonstrates the full plugin API:
+
+```typescript
+export default {
+  name: "wopr-plugin-discord",
+  version: "2.1.0",
+  
+  async init(ctx) {
+    // Register config schema for UI
+    ctx.registerConfigSchema("wopr-plugin-discord", {
+      title: "Discord Integration",
+      fields: [
+        { name: "token", type: "password", label: "Bot Token", required: true }
+      ]
+    });
+    
+    // Get config
+    const config = ctx.getConfig();
+    
+    // Handle Discord messages
+    client.on("messageCreate", async (msg) => {
+      if (isMentioned) {
+        // Get AI response
+        const response = await ctx.inject(
+          `discord-${msg.channel.id}`,
+          msg.content,
+          { from: msg.author.username }
+        );
+        await msg.reply(response);
+      } else {
+        // Just log for context
+        ctx.logMessage(
+          `discord-${msg.channel.id}`,
+          msg.content,
+          { from: msg.author.username }
+        );
+      }
+    });
+  }
+};
 ```
