@@ -30,6 +30,8 @@ import {
   unregisterContextProvider as unregisterCtxProvider,
   getContextProvider as getCtxProvider,
 } from "./core/context.js";
+import { providerRegistry } from "./core/providers.js";
+import type { ModelProvider } from "./types/provider.js";
 import type { 
   ContextPart, 
   MessageInfo 
@@ -52,6 +54,9 @@ const channelAdapters: Map<string, ChannelAdapter> = new Map();
 export const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
 const webUiExtensions: Map<string, WebUiExtension> = new Map();
 const uiComponents: Map<string, UiComponentExtension> = new Map();
+
+// Provider plugins registry (for providers registered via plugins)
+const providerPlugins: Map<string, ModelProvider> = new Map();
 
 function channelKey(channel: ChannelRef): string {
   return `${channel.type}:${channel.id}`;
@@ -342,6 +347,20 @@ function createPluginContext(
       const cfg = centralConfig.get();
       if (!key) return cfg;
       return centralConfig.getValue(key);
+    },
+
+    registerProvider(provider: ModelProvider) {
+      providerPlugins.set(provider.id, provider);
+      providerRegistry.register(provider);
+    },
+
+    unregisterProvider(id: string) {
+      providerPlugins.delete(id);
+      // Note: providerRegistry doesn't have unregister, providers are removed from runtime only
+    },
+
+    getProvider(id: string): ModelProvider | undefined {
+      return providerPlugins.get(id) || providerRegistry.listProviders().find(p => p.id === id) as unknown as ModelProvider;
     },
 
     log: createPluginLogger(plugin.name),

@@ -2,6 +2,9 @@
 export const PROTOCOL_VERSION = 2;
 export const MIN_PROTOCOL_VERSION = 1;
 
+// Re-export provider types for plugins
+export type { ModelProvider } from "./types/provider.js";
+
 // Session types
 export interface Session {
   name: string;
@@ -408,6 +411,11 @@ export interface WOPRPluginContext {
 
   // Main WOPR config (read-only access)
   getMainConfig(key?: string): any;
+
+  // Model providers - plugins register AI model providers
+  registerProvider(provider: import("./types/provider.js").ModelProvider): void;
+  unregisterProvider(id: string): void;
+  getProvider(id: string): import("./types/provider.js").ModelProvider | undefined;
 
   // Logging
   log: PluginLogger;

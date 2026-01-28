@@ -23,6 +23,7 @@ import { identityRouter } from "./routes/identity.js";
 import { discoverRouter } from "./routes/discover.js";
 import { configRouter } from "./routes/config.js";
 import { middlewareRouter } from "./routes/middleware.js";
+import { providersRouter } from "./routes/providers.js";
 import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast } from "./ws.js";
 
 // Core imports for daemon functionality
@@ -40,8 +41,6 @@ import type { StreamCallback, Peer } from "../types.js";
 
 // Provider registry imports
 import { providerRegistry } from "../core/providers.js";
-import { anthropicProvider } from "../providers/anthropic.js";
-import { codexProvider } from "../providers/openai.js";
 
 const DEFAULT_PORT = 7437;
 const DEFAULT_HOST = "127.0.0.1";
@@ -78,6 +77,7 @@ export function createApp() {
   app.route("/identity", identityRouter);
   app.route("/discover", discoverRouter);
   app.route("/middleware", middlewareRouter);
+  app.route("/providers", providersRouter);
 
   return app;
 }
@@ -102,14 +102,13 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
     await providerRegistry.loadCredentials();
     daemonLog("Provider credentials loaded");
 
-    // Register providers
-    providerRegistry.register(anthropicProvider);
-    providerRegistry.register(codexProvider);
-    daemonLog("Providers registered: anthropic, codex");
+    // Providers are now registered via plugins
+    // Core no longer hardcodes any providers
+    const providers = providerRegistry.listProviders();
+    daemonLog(`Providers registered: ${providers.map(p => p.id).join(", ") || "none (install provider plugins)"}`);
 
     // Check provider health
     await providerRegistry.checkHealth();
-    const providers = providerRegistry.listProviders();
     const available = providers.filter(p => p.available).map(p => p.id).join(", ");
     daemonLog(`Provider health check complete. Available: ${available || "none"}`);
   } catch (err) {

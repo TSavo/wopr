@@ -11,3 +11,4 @@ export { skillsRouter } from "./skills.js";
 export { identityRouter } from "./identity.js";
 export { discoverRouter } from "./discover.js";
 export { middlewareRouter } from "./middleware.js";
+export { providersRouter } from "./providers.js";
