@@ -193,18 +193,21 @@ export class ProviderRegistry {
       }
 
       const cred = this.credentials.get(providerName);
-      if (!cred) {
+      const credType = reg.provider.getCredentialType?.() || "api-key";
+      
+      // For OAuth providers, skip credential check
+      if (!cred && credType !== "oauth") {
         errors.push(`No credentials for provider: ${providerName}`);
         continue;
       }
 
       try {
-        const client = await reg.provider.createClient(cred.credential);
+        const client = await reg.provider.createClient(cred?.credential || "", config.options);
         return {
           name: providerName,
           provider: reg.provider,
           client,
-          credential: cred.credential,
+          credential: cred?.credential || "",
           fallbackChain: chain.slice(chain.indexOf(providerName) + 1),
         };
       } catch (error) {
