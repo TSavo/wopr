@@ -372,6 +372,11 @@ export async function inject(
   // Emit final injection event for plugins that want complete responses
   emitInjection(name, from, messageText, response);
 
+  // Update last trigger timestamp for progressive context
+  // This marks the end of this interaction, so next trigger gets context since now
+  const { updateLastTriggerTimestamp } = await import("./context.js");
+  updateLastTriggerTimestamp(name);
+
   return { response, sessionId, cost };
 }
 

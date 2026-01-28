@@ -59,6 +59,17 @@ export interface AssembledContext {
   sources: string[];   // List of context sources for debugging
 }
 
+// Track last trigger timestamp per session for progressive context
+const lastTriggerTimestamps: Map<string, number> = new Map();
+
+export function getLastTriggerTimestamp(session: string): number | undefined {
+  return lastTriggerTimestamps.get(session);
+}
+
+export function updateLastTriggerTimestamp(session: string, timestamp?: number): void {
+  lastTriggerTimestamps.set(session, timestamp || Date.now());
+}
+
 // ============================================================================
 // Registry
 // ============================================================================
@@ -136,7 +147,7 @@ const skillsProvider: ContextProvider = {
 };
 
 /**
- * Conversation history from session log
+ * Conversation history from session log (progressive since last trigger)
  */
 const conversationHistoryProvider: ContextProvider = {
   name: "conversation_history",
@@ -146,7 +157,15 @@ const conversationHistoryProvider: ContextProvider = {
     try {
       // Read conversation log for this session
       const { readConversationLog } = await import("./sessions.js");
-      const entries = readConversationLog(session, 20); // Last 20 entries
+      const allEntries = readConversationLog(session); // Get all entries
+      
+      if (allEntries.length === 0) return null;
+      
+      // Get entries since last trigger (or all if no previous trigger)
+      const lastTrigger = getLastTriggerTimestamp(session);
+      const entries = lastTrigger 
+        ? allEntries.filter(e => e.ts > lastTrigger)
+        : allEntries.slice(-20); // Fallback: last 20 if no trigger yet
       
       if (entries.length === 0) return null;
       
@@ -157,12 +176,13 @@ const conversationHistoryProvider: ContextProvider = {
       }).join("\n\n");
       
       return {
-        content: `Recent conversation history:\n${formatted}`,
+        content: `Conversation since last interaction:\n${formatted}`,
         role: "context",
         metadata: { 
           source: "conversation_log", 
           priority: 30,
-          entryCount: entries.length
+          entryCount: entries.length,
+          since: lastTrigger
         }
       };
     } catch (err) {
