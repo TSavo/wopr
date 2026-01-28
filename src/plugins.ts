@@ -404,9 +404,11 @@ export async function loadPlugin(
     entryPoint = join(installed.path, pkg.main || "index.js");
   } else if (existsSync(join(installed.path, "index.js"))) {
     entryPoint = join(installed.path, "index.js");
+  } else if (existsSync(join(installed.path, "index.ts"))) {
+    entryPoint = join(installed.path, "index.ts");
   }
 
-  // Dynamic import
+  // Dynamic import (tsx handles both JS and TS)
   const module = await import(entryPoint);
   const plugin: WOPRPlugin = module.default || module;
 

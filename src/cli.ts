@@ -701,7 +701,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           return;
         }
         const script = process.argv[1];
-        const child = execSync(`nohup node "${script}" daemon run > /dev/null 2>&1 & echo $!`, {
+        const child = execSync(`nohup npx tsx "${script}" daemon run > /dev/null 2>&1 & echo $!`, {
           encoding: "utf-8",
           shell: "/bin/bash",
         });
