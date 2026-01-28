@@ -417,7 +417,7 @@ function createPluginContext(
 export async function loadPlugin(
   installed: InstalledPlugin,
   injectors: {
-    inject: (session: string, message: string, onStream?: StreamCallback) => Promise<string>;
+    inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
     injectPeer: (peer: string, session: string, message: string) => Promise<string>;
     getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
     getSessions: () => string[];
