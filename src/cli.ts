@@ -71,6 +71,7 @@ Usage:
   wopr session show <name> [--limit N]   Show session details and conversation history
   wopr session delete <name>             Delete a session
   wopr session set-provider <name> <id> [--fallback chain]  Update session provider
+  wopr session init-docs <name>          Initialize SOUL.md, AGENTS.md, USER.md for session
 
   wopr skill list                        List installed skills
   wopr skill install <url|slug> [name]   Install skill from URL or registry
@@ -459,6 +460,32 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         }
         await client.deleteSession(args[0]);
         console.log(`Deleted session "${args[0]}"`);
+        break;
+      }
+      case "init-docs": {
+        if (!args[0]) {
+          console.error("Usage: wopr session init-docs <name> [--agent-name <name>] [--user-name <name>]");
+          process.exit(1);
+        }
+        const sessionName = args[0];
+        const agentNameFlag = args.indexOf("--agent-name");
+        const userNameFlag = args.indexOf("--user-name");
+        const agentName = agentNameFlag >= 0 ? args[agentNameFlag + 1] : undefined;
+        const userName = userNameFlag >= 0 ? args[userNameFlag + 1] : undefined;
+        
+        // Call daemon API to initialize self-doc files
+        try {
+          const result = await client.initSessionDocs(sessionName, { agentName, userName });
+          console.log(`Initialized self-documentation files for session "${sessionName}":`);
+          for (const file of result.created) {
+            console.log(`  - ${file}`);
+          }
+          console.log("\nEdit these files in ~/.wopr/sessions/" + sessionName + "/");
+          console.log("They will be automatically loaded into context on each injection.");
+        } catch (err: any) {
+          console.error(`Failed to init docs: ${err.message}`);
+          process.exit(1);
+        }
         break;
       }
       default:

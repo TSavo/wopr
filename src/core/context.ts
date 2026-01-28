@@ -377,5 +377,15 @@ export function initContextSystem(): void {
     registerContextProvider(channelProvider);
   }
   
+  // Register self-documentation provider (AGENTS.md, SOUL.md, etc.)
+  // Dynamically import to avoid circular dependency issues
+  import("./selfdoc-context.js").then((mod) => {
+    if (mod.selfDocContextProvider && !contextProviders.has("selfdoc")) {
+      registerContextProvider(mod.selfDocContextProvider);
+    }
+  }).catch(() => {
+    // Self-doc provider is optional
+  });
+  
   console.log("[context] Context system initialized with defaults");
 }

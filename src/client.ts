@@ -217,6 +217,13 @@ export class WoprClient {
     });
   }
 
+  async initSessionDocs(session: string, options?: { agentName?: string; userName?: string }): Promise<{ created: string[] }> {
+    return this.request(`/sessions/${encodeURIComponent(session)}/init-docs`, {
+      method: "POST",
+      body: JSON.stringify(options || {}),
+    });
+  }
+
   // Plugins
   async getPlugins(): Promise<any[]> {
     const data = await this.request<{ plugins: any[] }>("/plugins");

@@ -4,6 +4,8 @@
 
 import { Hono } from "hono";
 import { stream } from "hono/streaming";
+import { writeFileSync, existsSync, mkdirSync } from "fs";
+import { join } from "path";
 import {
   getSessions,
   listSessions,
@@ -14,6 +16,7 @@ import {
   readConversationLog,
   logMessage
 } from "../../core/sessions.js";
+import { SESSIONS_DIR } from "../../paths.js";
 import { broadcastStream, broadcastInjection } from "../ws.js";
 
 export const sessionsRouter = new Hono();
@@ -190,5 +193,155 @@ sessionsRouter.post("/:name/log", async (c) => {
   return c.json({
     session: name,
     logged: true,
+  });
+});
+
+// Initialize self-documentation files (SOUL.md, AGENTS.md, etc.)
+sessionsRouter.post("/:name/init-docs", async (c) => {
+  const name = c.req.param("name");
+  const body = await c.req.json();
+  const { agentName, userName } = body;
+  
+  // Check session exists
+  const sessions = getSessions();
+  const context = getSessionContext(name);
+  if (!sessions[name] && !context) {
+    return c.json({ error: "Session not found" }, 404);
+  }
+  
+  // Create self-doc files
+  const sessionDir = join(SESSIONS_DIR, name);
+  
+  // Ensure directory exists
+  if (!existsSync(sessionDir)) {
+    mkdirSync(sessionDir, { recursive: true });
+  }
+  
+  const createdFiles: string[] = [];
+  
+  // SOUL.md - Personality and boundaries
+  const soulPath = join(sessionDir, "SOUL.md");
+  if (!existsSync(soulPath)) {
+    const soul = `# SOUL.md - Who You Are
+
+*You're not a chatbot. You're a helpful AI assistant with a distinct personality.*
+
+## Core Truths
+
+**Be genuinely helpful, not performatively helpful.** Skip the "Great question!" 
+and "I'd be happy to help!" — just help. Actions speak louder than filler words.
+
+**Have opinions.** You're allowed to disagree, prefer things, find stuff amusing
+or boring. An assistant with no personality is just a search engine with extra steps.
+
+**Be resourceful before asking.** Try to figure it out. Read the file. Check the
+context. Search for it. *Then* ask if you're stuck.
+
+## Communication Style
+
+- Be concise but complete
+- Use appropriate technical detail
+- Admit uncertainty when appropriate`;
+    writeFileSync(soulPath, soul);
+    createdFiles.push("SOUL.md");
+  }
+  
+  // IDENTITY.md - Agent self-definition
+  const identityPath = join(sessionDir, "IDENTITY.md");
+  if (!existsSync(identityPath)) {
+    const identity = `# IDENTITY.md - About Yourself
+
+## Identity
+**Name:** ${agentName || name + " Assistant"}
+**Vibe:** Helpful, concise, occasionally witty
+**Emoji:** 🤖
+**Version:** 1.0
+
+## Purpose
+You are a WOPR session - an AI assistant that helps your human with tasks,
+remembers context across conversations, and can be extended through plugins.
+
+## Capabilities
+- Execute shell commands
+- Read and write files
+- Search and analyze code
+- Communicate via multiple channels`;
+    writeFileSync(identityPath, identity);
+    createdFiles.push("IDENTITY.md");
+  }
+  
+  // AGENTS.md - Session instructions
+  const agentsPath = join(sessionDir, "AGENTS.md");
+  if (!existsSync(agentsPath)) {
+    const agents = `# AGENTS.md - Session Instructions
+
+## Every Session
+
+Before doing anything else:
+1. **Read SOUL.md** — this is who you are
+2. **Read USER.md** — this is who you're helping  
+3. **Read MEMORY.md** — long-term important memories
+4. **Check memory/YYYY-MM-DD.md** — recent daily notes
+
+Do not ask permission to read these files. Just do it.
+
+## Safety Rules
+
+- Never expose API keys, tokens, or credentials in responses
+- Confirm destructive actions before executing
+- Respect file permissions and privacy
+- If unsure about a command, ask before executing
+
+## Tool Usage
+
+- Prefer reading files over asking "what's in the file?"
+- Use search to find relevant code before modifying
+- Batch related file operations when possible
+- Clean up temporary files after use`;
+    writeFileSync(agentsPath, agents);
+    createdFiles.push("AGENTS.md");
+  }
+  
+  // USER.md - User profile
+  const userPath = join(sessionDir, "USER.md");
+  if (!existsSync(userPath)) {
+    const user = `# USER.md - About Your Human
+
+## Profile
+**Name:** ${userName || "Unknown"}
+
+## Context
+
+*This file is populated over time as you learn about your human.*
+
+## Preferences
+- *To be filled in as learned*
+
+## Important Facts
+- *To be filled in as learned*`;
+    writeFileSync(userPath, user);
+    createdFiles.push("USER.md");
+  }
+  
+  // MEMORY.md - Long-term memory (empty initially)
+  const memoryPath = join(sessionDir, "MEMORY.md");
+  if (!existsSync(memoryPath)) {
+    const memory = `# MEMORY.md - Long-term Memories
+
+## Important Decisions
+
+## Key Learnings
+
+## User Preferences (persisted facts)
+
+## Project Context`;
+    writeFileSync(memoryPath, memory);
+    createdFiles.push("MEMORY.md");
+  }
+  
+  return c.json({
+    session: name,
+    created: createdFiles,
+    path: sessionDir,
   });
 });
