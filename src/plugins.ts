@@ -49,7 +49,7 @@ const loadedPlugins: Map<string, { plugin: WOPRPlugin; context: WOPRPluginContex
 // Context providers - session -> provider mapping
 const contextProviders: Map<string, ContextProvider> = new Map();
 const channelAdapters: Map<string, ChannelAdapter> = new Map();
-const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
+export const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
 const webUiExtensions: Map<string, WebUiExtension> = new Map();
 const uiComponents: Map<string, UiComponentExtension> = new Map();
 

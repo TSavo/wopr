@@ -22,6 +22,7 @@ import { skillsRouter } from "./routes/skills.js";
 import { identityRouter } from "./routes/identity.js";
 import { discoverRouter } from "./routes/discover.js";
 import { configRouter } from "./routes/config.js";
+import { middlewareRouter } from "./routes/middleware.js";
 import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast } from "./ws.js";
 
 // Core imports for daemon functionality
@@ -76,6 +77,7 @@ export function createApp() {
   app.route("/skills", skillsRouter);
   app.route("/identity", identityRouter);
   app.route("/discover", discoverRouter);
+  app.route("/middleware", middlewareRouter);
 
   return app;
 }

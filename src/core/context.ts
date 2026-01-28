@@ -63,22 +63,26 @@ export interface AssembledContext {
 // Registry
 // ============================================================================
 
-const providers: Map<string, ContextProvider> = new Map();
+export const contextProviders: Map<string, ContextProvider> = new Map();
 
 export function registerContextProvider(provider: ContextProvider): void {
-  providers.set(provider.name, provider);
+  contextProviders.set(provider.name, provider);
 }
 
 export function unregisterContextProvider(name: string): void {
-  providers.delete(name);
+  contextProviders.delete(name);
 }
 
 export function getContextProvider(name: string): ContextProvider | undefined {
-  return providers.get(name);
+  return contextProviders.get(name);
 }
 
 export function listContextProviders(): ContextProvider[] {
-  return Array.from(providers.values());
+  return Array.from(contextProviders.values());
+}
+
+export function getRegisteredProviders(): ContextProvider[] {
+  return Array.from(contextProviders.values());
 }
 
 // ============================================================================
@@ -199,7 +203,7 @@ export async function assembleContext(
   } = options;
   
   // Get active providers
-  let activeProviders = Array.from(providers.values());
+  let activeProviders = Array.from(contextProviders.values());
   
   // Filter by name if specified
   if (providerNames) {
@@ -302,13 +306,13 @@ ${content}
 
 export function initContextSystem(): void {
   // Register default providers (only if not already registered)
-  if (!providers.has("session_system")) {
+  if (!contextProviders.has("session_system")) {
     registerContextProvider(sessionSystemProvider);
   }
-  if (!providers.has("skills")) {
+  if (!contextProviders.has("skills")) {
     registerContextProvider(skillsProvider);
   }
-  if (!providers.has("channel_history")) {
+  if (!contextProviders.has("channel_history")) {
     registerContextProvider(channelProvider);
   }
   

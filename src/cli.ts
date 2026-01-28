@@ -145,6 +145,19 @@ Usage:
   wopr providers remove <id>                 Remove provider credential
   wopr providers health-check                Check health of all providers
 
+  wopr middleware list                       List all middleware
+  wopr middleware chain                      Show execution order
+  wopr middleware show <name>                Show middleware details
+  wopr middleware enable <name>              Enable middleware
+  wopr middleware disable <name>             Disable middleware
+  wopr middleware priority <name> <n>        Set middleware priority
+
+  wopr context list                          List all context providers
+  wopr context show <name>                   Show context provider details
+  wopr context enable <name>                 Enable context provider
+  wopr context disable <name>                Disable context provider
+  wopr context priority <name> <n>           Set context provider priority
+
 Environment:
   WOPR_HOME                              Base directory (default: ~/wopr)
   ANTHROPIC_API_KEY                      API key for Claude (Anthropic)
@@ -1289,6 +1302,169 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     console.log("\nNext steps:");
     console.log("  wopr daemon start    # Start the daemon");
     console.log("  wopr session create  # Create a session");
+  } else if (command === "middleware") {
+    await requireDaemon();
+    switch (subcommand) {
+      case "list": {
+        const middlewares = await client.getMiddlewares();
+        if (middlewares.length === 0) {
+          console.log("No middleware registered.");
+        } else {
+          console.log("Middlewares:");
+          console.log("Name              | Priority | Enabled | Hooks");
+          console.log("------------------|----------|---------|-------");
+          for (const m of middlewares) {
+            const name = m.name.padEnd(17);
+            const priority = m.priority.toString().padEnd(8);
+            const enabled = (m.enabled ? "yes" : "no").padEnd(7);
+            const hooks = [];
+            if (m.hasIncoming) hooks.push("in");
+            if (m.hasOutgoing) hooks.push("out");
+            console.log(`${name}| ${priority}| ${enabled}| ${hooks.join(",") || "-"}`);
+          }
+        }
+        break;
+      }
+      case "chain": {
+        const chain = await client.getMiddlewareChain();
+        if (chain.length === 0) {
+          console.log("No middleware in chain.");
+        } else {
+          console.log("Middleware chain (execution order):");
+          for (let i = 0; i < chain.length; i++) {
+            const m = chain[i];
+            const status = m.enabled ? "✓" : "✗";
+            console.log(`  ${i + 1}. [${status}] ${m.name} (priority: ${m.priority})`);
+          }
+        }
+        break;
+      }
+      case "show": {
+        if (!args[0]) {
+          console.error("Usage: wopr middleware show <name>");
+          process.exit(1);
+        }
+        try {
+          const m = await client.getMiddleware(args[0]);
+          console.log(`Middleware: ${m.name}`);
+          console.log(`  Priority: ${m.priority}`);
+          console.log(`  Enabled: ${m.enabled ? "yes" : "no"}`);
+          console.log(`  Incoming hook: ${m.hasIncoming ? "yes" : "no"}`);
+          console.log(`  Outgoing hook: ${m.hasOutgoing ? "yes" : "no"}`);
+        } catch (err: any) {
+          console.error(`Middleware not found: ${args[0]}`);
+          process.exit(1);
+        }
+        break;
+      }
+      case "enable": {
+        if (!args[0]) {
+          console.error("Usage: wopr middleware enable <name>");
+          process.exit(1);
+        }
+        await client.enableMiddleware(args[0]);
+        console.log(`Enabled middleware: ${args[0]}`);
+        break;
+      }
+      case "disable": {
+        if (!args[0]) {
+          console.error("Usage: wopr middleware disable <name>");
+          process.exit(1);
+        }
+        await client.disableMiddleware(args[0]);
+        console.log(`Disabled middleware: ${args[0]}`);
+        break;
+      }
+      case "priority": {
+        if (!args[0] || args[1] === undefined) {
+          console.error("Usage: wopr middleware priority <name> <priority>");
+          console.error("  Lower priority runs first (default: 100)");
+          process.exit(1);
+        }
+        const priority = parseInt(args[1], 10);
+        if (isNaN(priority)) {
+          console.error("Priority must be a number");
+          process.exit(1);
+        }
+        await client.setMiddlewarePriority(args[0], priority);
+        console.log(`Set ${args[0]} priority to ${priority}`);
+        break;
+      }
+      default:
+        help();
+    }
+  } else if (command === "context") {
+    await requireDaemon();
+    switch (subcommand) {
+      case "list": {
+        const providers = await client.getContextProviders();
+        if (providers.length === 0) {
+          console.log("No context providers registered.");
+        } else {
+          console.log("Context providers:");
+          console.log("Name              | Priority | Enabled");
+          console.log("------------------|----------|--------");
+          for (const p of providers) {
+            const name = p.name.padEnd(17);
+            const priority = p.priority.toString().padEnd(8);
+            const enabled = p.enabled ? "yes" : "no";
+            console.log(`${name}| ${priority}| ${enabled}`);
+          }
+        }
+        break;
+      }
+      case "show": {
+        if (!args[0]) {
+          console.error("Usage: wopr context show <name>");
+          process.exit(1);
+        }
+        try {
+          const p = await client.getContextProvider(args[0]);
+          console.log(`Context provider: ${p.name}`);
+          console.log(`  Priority: ${p.priority}`);
+          console.log(`  Enabled: ${p.enabled ? "yes" : "no"}`);
+        } catch (err: any) {
+          console.error(`Context provider not found: ${args[0]}`);
+          process.exit(1);
+        }
+        break;
+      }
+      case "enable": {
+        if (!args[0]) {
+          console.error("Usage: wopr context enable <name>");
+          process.exit(1);
+        }
+        await client.enableContextProvider(args[0]);
+        console.log(`Enabled context provider: ${args[0]}`);
+        break;
+      }
+      case "disable": {
+        if (!args[0]) {
+          console.error("Usage: wopr context disable <name>");
+          process.exit(1);
+        }
+        await client.disableContextProvider(args[0]);
+        console.log(`Disabled context provider: ${args[0]}`);
+        break;
+      }
+      case "priority": {
+        if (!args[0] || args[1] === undefined) {
+          console.error("Usage: wopr context priority <name> <priority>");
+          console.error("  Lower priority runs first (appears earlier in context)");
+          process.exit(1);
+        }
+        const priority = parseInt(args[1], 10);
+        if (isNaN(priority)) {
+          console.error("Priority must be a number");
+          process.exit(1);
+        }
+        await client.setContextProviderPriority(args[0], priority);
+        console.log(`Set ${args[0]} priority to ${priority}`);
+        break;
+      }
+      default:
+        help();
+    }
   } else {
     help();
   }

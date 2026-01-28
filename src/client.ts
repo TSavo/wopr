@@ -459,6 +459,69 @@ export class WoprClient {
       body: JSON.stringify({ providerId, fallback }),
     });
   }
+
+  // Middleware management
+  async getMiddlewares(): Promise<{ name: string; priority: number; enabled: boolean; hasIncoming: boolean; hasOutgoing: boolean }[]> {
+    const data = await this.request<{ middlewares: { name: string; priority: number; enabled: boolean; hasIncoming: boolean; hasOutgoing: boolean }[] }>("/middleware");
+    return data.middlewares;
+  }
+
+  async getMiddlewareChain(): Promise<{ name: string; priority: number; enabled: boolean }[]> {
+    const data = await this.request<{ chain: { name: string; priority: number; enabled: boolean }[] }>("/middleware/chain");
+    return data.chain;
+  }
+
+  async getMiddleware(name: string): Promise<{ name: string; priority: number; enabled: boolean; hasIncoming: boolean; hasOutgoing: boolean }> {
+    return this.request(`/middleware/${encodeURIComponent(name)}`);
+  }
+
+  async enableMiddleware(name: string): Promise<void> {
+    await this.request(`/middleware/${encodeURIComponent(name)}/enable`, {
+      method: "POST",
+    });
+  }
+
+  async disableMiddleware(name: string): Promise<void> {
+    await this.request(`/middleware/${encodeURIComponent(name)}/disable`, {
+      method: "POST",
+    });
+  }
+
+  async setMiddlewarePriority(name: string, priority: number): Promise<void> {
+    await this.request(`/middleware/${encodeURIComponent(name)}/priority`, {
+      method: "PUT",
+      body: JSON.stringify({ priority }),
+    });
+  }
+
+  // Context provider management
+  async getContextProviders(): Promise<{ name: string; priority: number; enabled: boolean }[]> {
+    const data = await this.request<{ providers: { name: string; priority: number; enabled: boolean }[] }>("/middleware/context");
+    return data.providers;
+  }
+
+  async getContextProvider(name: string): Promise<{ name: string; priority: number; enabled: boolean }> {
+    return this.request(`/middleware/context/${encodeURIComponent(name)}`);
+  }
+
+  async enableContextProvider(name: string): Promise<void> {
+    await this.request(`/middleware/context/${encodeURIComponent(name)}/enable`, {
+      method: "POST",
+    });
+  }
+
+  async disableContextProvider(name: string): Promise<void> {
+    await this.request(`/middleware/context/${encodeURIComponent(name)}/disable`, {
+      method: "POST",
+    });
+  }
+
+  async setContextProviderPriority(name: string, priority: number): Promise<void> {
+    await this.request(`/middleware/context/${encodeURIComponent(name)}/priority`, {
+      method: "PUT",
+      body: JSON.stringify({ priority }),
+    });
+  }
 }
 
 // Default singleton
