@@ -659,8 +659,10 @@ export async function loadAllPlugins(injectors: {
   getPeers: () => Peer[];
 }): Promise<void> {
   const installed = getInstalledPlugins();
+  console.log(`[plugins] Found ${installed.length} installed plugins`);
   
   for (const plugin of installed) {
+    console.log(`[plugins] Checking ${plugin.name}: enabled=${plugin.enabled}`);
     if (!plugin.enabled) continue;
     
     try {
