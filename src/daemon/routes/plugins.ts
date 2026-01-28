@@ -57,6 +57,8 @@ pluginsRouter.post("/", async (c) => {
 
   try {
     const plugin = await installPlugin(source);
+    // Auto-enable plugin after installation
+    enablePlugin(plugin.name);
     return c.json({
       installed: true,
       plugin: {
@@ -64,6 +66,7 @@ pluginsRouter.post("/", async (c) => {
         version: plugin.version,
         description: plugin.description,
         source: plugin.source,
+        enabled: true,
       },
     }, 201);
   } catch (err: any) {
