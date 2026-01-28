@@ -10,3 +10,4 @@ sessions/
 *.local
 .env
 web/node_modules/
+plugins/
