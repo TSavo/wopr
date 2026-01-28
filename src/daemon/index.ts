@@ -100,22 +100,11 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   writeFileSync(PID_FILE, process.pid.toString());
   daemonLog(`Daemon started (PID ${process.pid})`);
 
-  // Initialize provider registry
+  // Initialize provider registry (load credentials only, providers register via plugins)
   daemonLog("Initializing provider registry...");
   try {
-    // Load credentials from disk
     await providerRegistry.loadCredentials();
     daemonLog("Provider credentials loaded");
-
-    // Providers are now registered via plugins
-    // Core no longer hardcodes any providers
-    const providers = providerRegistry.listProviders();
-    daemonLog(`Providers registered: ${providers.map(p => p.id).join(", ") || "none (install provider plugins)"}`);
-
-    // Check provider health
-    await providerRegistry.checkHealth();
-    const available = providers.filter(p => p.available).map(p => p.id).join(", ");
-    daemonLog(`Provider health check complete. Available: ${available || "none"}`);
   } catch (err) {
     daemonLog(`Warning: Provider registry initialization failed: ${err}`);
   }
@@ -165,8 +154,20 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
     getPeers: (): Peer[] => getPeers(),
   };
 
-  // Load plugins
+  // Load plugins (this is where providers register themselves)
   await loadAllPlugins(injectors);
+
+  // Check provider health after plugins have registered
+  try {
+    const providers = providerRegistry.listProviders();
+    daemonLog(`Providers registered: ${providers.map(p => p.id).join(", ") || "none (install provider plugins)"}`);
+    
+    await providerRegistry.checkHealth();
+    const available = providers.filter(p => p.available).map(p => p.id).join(", ");
+    daemonLog(`Provider health check complete. Available: ${available || "none"}`);
+  } catch (err) {
+    daemonLog(`Warning: Provider health check failed: ${err}`);
+  }
 
   // Start cron scheduler
   const lastRun: Record<string, number> = {};
