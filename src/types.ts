@@ -391,6 +391,10 @@ export interface WOPRPluginContext {
   // Supports multimodal messages with images
   inject(session: string, message: string | MultimodalMessage, options?: PluginInjectOptions): Promise<string>;
 
+  // Log a message to conversation history without triggering a response
+  // Useful for capturing context from messages not directed at the bot
+  logMessage(session: string, message: string, options?: { from?: string; channel?: ChannelRef }): void;
+
   // Inject to peer's session, get response
   injectPeer(peer: string, session: string, message: string): Promise<string>;
 

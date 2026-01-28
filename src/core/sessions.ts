@@ -104,6 +104,24 @@ export function appendToConversationLog(name: string, entry: ConversationEntry):
   appendFileSync(logPath, line, "utf-8");
 }
 
+/**
+ * Log a message to conversation history without triggering a response
+ * Used by plugins to capture context from messages not directed at the bot
+ */
+export function logMessage(
+  session: string,
+  content: string,
+  options?: { from?: string; channel?: any }
+): void {
+  appendToConversationLog(session, {
+    ts: Date.now(),
+    from: options?.from || "unknown",
+    content,
+    type: "message",
+    channel: options?.channel,
+  });
+}
+
 export function readConversationLog(name: string, limit?: number): ConversationEntry[] {
   const logPath = getConversationLogPath(name);
   if (!existsSync(logPath)) return [];

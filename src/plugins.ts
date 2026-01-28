@@ -27,6 +27,7 @@ import {
   ConfigSchema,
   PluginInjectOptions,
 } from "./types.js";
+import { logMessage as logMessageToSession } from "./core/sessions.js";
 import {
   registerContextProvider as registerCtxProvider,
   unregisterContextProvider as unregisterCtxProvider,
@@ -270,6 +271,8 @@ function createPluginContext(
   return {
     inject: (session: string, message: string, options?: PluginInjectOptions) =>
       injectors.inject(session, message, options),
+    logMessage: (session: string, message: string, options?: { from?: string; channel?: ChannelRef }) =>
+      logMessageToSession(session, message, options),
     injectPeer: injectors.injectPeer,
     getIdentity: injectors.getIdentity,
     getSessions: injectors.getSessions,
