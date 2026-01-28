@@ -8,6 +8,7 @@ import { providerRegistry } from "../core/providers.js";
 import { anthropicProvider } from "./anthropic.js";
 import { codexProvider } from "./openai.js";
 import { kimiProvider } from "./kimi.js";
+import { opencodeProvider } from "./opencode.js";
 
 /**
  * Initialize the provider system
@@ -32,6 +33,7 @@ export { providerRegistry };
 export { anthropicProvider };
 export { codexProvider };
 export { kimiProvider };
+export { opencodeProvider };
 
 // Export types
 export type {
