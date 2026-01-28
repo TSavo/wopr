@@ -62,8 +62,9 @@ export interface AssembledContext {
 // Track last trigger timestamp per session for progressive context
 const lastTriggerTimestamps: Map<string, number> = new Map();
 
-export function getLastTriggerTimestamp(session: string): number | undefined {
-  return lastTriggerTimestamps.get(session);
+export function getLastTriggerTimestamp(session: string): number {
+  // Return epoch (1970) if no previous trigger - this means "get all history"
+  return lastTriggerTimestamps.get(session) || 0;
 }
 
 export function updateLastTriggerTimestamp(session: string, timestamp?: number): void {
@@ -161,11 +162,11 @@ const conversationHistoryProvider: ContextProvider = {
       
       if (allEntries.length === 0) return null;
       
-      // Get entries since last trigger (or all if no previous trigger)
+      // Get entries since last trigger (epoch 0 = first time = get last 20)
       const lastTrigger = getLastTriggerTimestamp(session);
-      const entries = lastTrigger 
-        ? allEntries.filter(e => e.ts > lastTrigger)
-        : allEntries.slice(-20); // Fallback: last 20 if no trigger yet
+      const entries = allEntries
+        .filter(e => e.ts > lastTrigger)
+        .slice(-20); // Max 20 entries to prevent context explosion
       
       if (entries.length === 0) return null;
       
@@ -182,7 +183,7 @@ const conversationHistoryProvider: ContextProvider = {
           source: "conversation_log", 
           priority: 30,
           entryCount: entries.length,
-          since: lastTrigger
+          since: lastTrigger === 0 ? "beginning" : lastTrigger
         }
       };
     } catch (err) {
