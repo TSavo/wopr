@@ -93,8 +93,14 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
       execSync(`git clone https://github.com/${repo} "${pluginDir}"`, { stdio: "inherit" });
     }
 
-    // Read package.json for metadata
+    // Install dependencies if package.json exists
     const pkgPath = join(pluginDir, "package.json");
+    if (existsSync(pkgPath)) {
+      console.log(`[plugins] Installing dependencies for ${repo}...`);
+      execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+    }
+
+    // Read package.json for metadata
     const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
 
     const installed: InstalledPlugin = {
@@ -119,7 +125,13 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
       execSync(`ln -s "${resolved}" "${pluginDir}"`);
     }
 
+    // Install dependencies if package.json exists
     const pkgPath = join(pluginDir, "package.json");
+    if (existsSync(pkgPath)) {
+      console.log(`[plugins] Installing dependencies for local plugin...`);
+      execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+    }
+
     const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
 
     const installed: InstalledPlugin = {
