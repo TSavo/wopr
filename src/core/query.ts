@@ -35,10 +35,19 @@ export interface QueryRequest {
  * @throws Error if all providers in fallback chain fail
  */
 export async function executeQuery(request: QueryRequest): Promise<ModelResponse> {
-  // Use provided config or get default
-  const config: ProviderConfig = request.providerConfig || {
-    name: "anthropic", // Default provider
-  };
+  // Use provided config or auto-detect available provider
+  let config: ProviderConfig;
+  if (request.providerConfig) {
+    config = request.providerConfig;
+  } else {
+    // Auto-detect: use first available provider
+    const available = providerRegistry.listProviders().filter(p => p.available);
+    if (available.length === 0) {
+      throw new Error("No providers available. Configure at least one provider (anthropic, kimi, openai, etc.)");
+    }
+    config = { name: available[0].id };
+    console.log(`[Query] Auto-selected provider: ${available[0].id}`);
+  }
 
   try {
     // Resolve provider with fallback
