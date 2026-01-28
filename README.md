@@ -56,16 +56,29 @@ Your identity is stored in `~/.wopr/identity.json` (mode 0600).
 
 ### Sessions
 
-Sessions are named Claude conversations with persistent context:
+Sessions are named AI conversations with persistent context:
 
 ```bash
 wopr session create dev "You are a senior developer. Be concise."
-wopr session inject dev "Review this PR: ..."
+wopr session inject dev "Review this PR: ..."        # Get AI response
+wopr session log dev "Context: User prefers TypeScript"  # Log context without AI response
 wopr session list
+wopr session show dev --limit 20                     # View conversation history
 wopr session delete dev
 ```
 
+**Session commands:**
+- `create` - Create a new session with optional context and provider
+- `inject` - Send message and get AI response
+- `log` - Log message to history without triggering AI (for context)
+- `list` - List all sessions
+- `show` - Show session details and conversation history
+- `delete` - Delete a session
+- `set-provider` - Change the AI provider for a session
+
 Sessions can be injected into locally or by authorized peers over P2P.
+
+**Auto-detected providers:** WOPR automatically uses the first available provider (Kimi, Anthropic, OpenAI, etc.) - no configuration needed if you have one provider set up!
 
 ### Channels
 
@@ -294,6 +307,36 @@ Current: **v2**
 - v2: Hello/HelloAck handshake, ephemeral keys (PFS), rate limiting, replay protection, key rotation
 
 Backward compatible - v2 peers can communicate with v1 peers (falls back to static encryption).
+
+### Plugins
+
+WOPR supports plugins for extending functionality:
+
+```bash
+# Install a plugin from GitHub
+wopr plugin install github:TSavo/wopr-plugin-discord
+
+# Enable/disable plugins
+wopr plugin enable wopr-plugin-discord
+wopr plugin disable wopr-plugin-discord
+
+# List installed plugins
+wopr plugin list
+```
+
+**Official plugins:**
+- `wopr-plugin-discord` - Discord bot integration with reactions (👀/✅) and full conversation context
+- `wopr-plugin-provider-kimi` - Moonshot AI Kimi provider with OAuth
+- `wopr-plugin-provider-openai` - OpenAI Codex provider
+
+**Plugin API for developers:**
+```typescript
+// Plugins can use:
+ctx.inject(session, message, { from: "username", channel: {...} })  // Get AI response
+ctx.logMessage(session, message, { from: "username" })  // Log without AI response
+ctx.getConfig()  // Get plugin configuration
+ctx.registerConfigSchema(pluginId, schema)  // Define config UI
+```
 
 ## License
 
