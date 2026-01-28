@@ -16,7 +16,6 @@ import {
   StreamMessage,
   Peer,
   StreamCallback,
-  ContextProvider,
   ChannelAdapter,
   ChannelRef,
   MessageMiddleware,
@@ -24,7 +23,17 @@ import {
   MiddlewareOutput,
   WebUiExtension,
   UiComponentExtension,
+  ContextProvider,
 } from "./types.js";
+import {
+  registerContextProvider as registerCtxProvider,
+  unregisterContextProvider as unregisterCtxProvider,
+  getContextProvider as getCtxProvider,
+} from "./core/context.js";
+import type { 
+  ContextPart, 
+  MessageInfo 
+} from "./core/context.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
 const PLUGINS_DIR = join(WOPR_HOME, "plugins");
@@ -240,12 +249,16 @@ function createPluginContext(
       pluginEvents.off(event, handler);
     },
 
-    registerContextProvider(session: string, provider: ContextProvider) {
-      contextProviders.set(session, provider);
+    registerContextProvider(provider: ContextProvider) {
+      registerCtxProvider(provider);
     },
 
-    unregisterContextProvider(session: string) {
-      contextProviders.delete(session);
+    unregisterContextProvider(name: string) {
+      unregisterCtxProvider(name);
+    },
+
+    getContextProvider(name: string): ContextProvider | undefined {
+      return getCtxProvider(name);
     },
 
     registerChannel(adapter: ChannelAdapter) {

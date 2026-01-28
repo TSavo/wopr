@@ -258,9 +258,32 @@ export interface StreamMessage {
 export type StreamCallback = (msg: StreamMessage) => void;
 
 // Context provider interface - plugins implement this to provide conversation context
+/**
+ * Composable context provider - plugins register these to contribute context
+ */
 export interface ContextProvider {
-  // Get conversation context for a session (e.g., recent Discord messages)
-  getContext(session: string): Promise<string>;
+  name: string;
+  priority: number;
+  enabled?: boolean | ((session: string, message: MessageInfo) => boolean);
+  getContext(session: string, message: MessageInfo): Promise<ContextPart | null>;
+}
+
+export interface MessageInfo {
+  content: string;
+  from: string;
+  channel?: ChannelRef;
+  timestamp: number;
+}
+
+export interface ContextPart {
+  content: string;
+  role?: "system" | "context" | "warning" | "user";
+  metadata?: {
+    source: string;
+    priority: number;
+    trustLevel?: "trusted" | "untrusted" | "verified";
+    [key: string]: any;
+  };
 }
 
 export interface MiddlewareInput {
@@ -349,9 +372,10 @@ export interface WOPRPluginContext {
   off(event: "injection", handler: InjectionHandler): void;
   off(event: "stream", handler: StreamHandler): void;
 
-  // Context providers - plugins register to provide conversation context
-  registerContextProvider(session: string, provider: ContextProvider): void;
-  unregisterContextProvider(session: string): void;
+  // Context providers - plugins register context sources
+  registerContextProvider(provider: ContextProvider): void;
+  unregisterContextProvider(name: string): void;
+  getContextProvider(name: string): ContextProvider | undefined;
 
   // Channels - plugins register message channels (e.g., Discord, P2P peers)
   registerChannel(adapter: ChannelAdapter): void;

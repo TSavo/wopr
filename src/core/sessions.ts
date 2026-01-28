@@ -13,11 +13,18 @@ import {
   applyOutgoingMiddlewares,
   emitInjection,
   emitStream,
-  getChannel,
-  getContextProvider,
 } from "../plugins.js";
 import { discoverSkills, formatSkillsXml } from "./skills.js";
 import { providerRegistry } from "./providers.js";
+import { 
+  assembleContext, 
+  initContextSystem,
+  type MessageInfo,
+  type AssembledContext 
+} from "./context.js";
+
+// Initialize context system with defaults
+initContextSystem();
 
 // Ensure directories exist
 if (!existsSync(SESSIONS_DIR)) {
@@ -149,34 +156,34 @@ export async function inject(
     }
   }
 
-  let conversationContext = "";
-  const channelAdapter = channel ? getChannel(channel) : undefined;
-  const contextProvider = channelAdapter ? undefined : getContextProvider(name);
-
-  try {
-    if (channelAdapter) {
-      conversationContext = await channelAdapter.getContext();
-      if (!silent && conversationContext) {
-        console.log(`[wopr] Channel context added conversation history`);
-      }
-    } else if (contextProvider) {
-      conversationContext = await contextProvider.getContext(name);
-      if (!silent && conversationContext) {
-        console.log(`[wopr] Context provider added conversation history`);
-      }
+  // Assemble context using the new provider system
+  const messageInfo: MessageInfo = {
+    content: message,
+    from,
+    channel,
+    timestamp: Date.now()
+  };
+  
+  const assembled = await assembleContext(name, messageInfo);
+  
+  if (!silent) {
+    if (assembled.sources.length > 0) {
+      console.log(`[wopr] Context sources: ${assembled.sources.join(", ")}`);
     }
-
-    if (conversationContext) {
-      appendToConversationLog(name, {
-        ts: Date.now(),
-        from: "system",
-        content: conversationContext,
-        type: "context",
-        channel,
-      });
+    if (assembled.warnings.length > 0) {
+      assembled.warnings.forEach(w => console.warn(`[wopr] Warning: ${w}`));
     }
-  } catch (err: any) {
-    console.error(`[wopr] Context provider error: ${err.message}`);
+  }
+  
+  // Log context to conversation log
+  if (assembled.context) {
+    appendToConversationLog(name, {
+      ts: Date.now(),
+      from: "system",
+      content: assembled.context,
+      type: "context",
+      channel,
+    });
   }
 
   // Log incoming message to conversation log
@@ -206,13 +213,14 @@ export async function inject(
     channel,
   });
 
-  // Prepend conversation context to message
-  const fullMessage = conversationContext ? `${conversationContext}${middlewareMessage}` : middlewareMessage;
-
-  const skills = discoverSkills();
-  const skillsXml = formatSkillsXml(skills);
-  const baseContext = context || `You are WOPR session "${name}".`;
-  const fullContext = skillsXml ? `${baseContext}\n${skillsXml}` : baseContext;
+  // Build full message (context + user message)
+  // Context from providers goes before the actual message for conversation flow
+  const fullMessage = assembled.context 
+    ? `${assembled.context}\n\n${middlewareMessage}` 
+    : middlewareMessage;
+  
+  // System context is the assembled system + any session file context as fallback
+  const fullContext = assembled.system || context || `You are WOPR session "${name}".`;
 
   // Load provider config from session or use defaults
   let providerConfig = getSessionProvider(name);
