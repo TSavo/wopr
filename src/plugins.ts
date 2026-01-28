@@ -420,8 +420,17 @@ export async function loadPlugin(
     entryPoint = join(installed.path, "index.ts");
   }
 
-  // Dynamic import (tsx handles both JS and TS)
-  const module = await import(entryPoint);
+  // Temporarily change cwd to plugin directory for proper module resolution
+  const originalCwd = process.cwd();
+  process.chdir(installed.path);
+  
+  let module: any;
+  try {
+    // Dynamic import (tsx handles both JS and TS)
+    module = await import(entryPoint);
+  } finally {
+    process.chdir(originalCwd);
+  }
   const plugin: WOPRPlugin = module.default || module;
 
   // Create context
