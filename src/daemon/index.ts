@@ -13,6 +13,7 @@ import { createNodeWebSocket } from "@hono/node-ws";
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
 
 import { PID_FILE, LOG_FILE } from "../paths.js";
+import { config as centralConfig } from "../core/config.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { cronsRouter } from "./routes/crons.js";
 import { authRouter } from "./routes/auth.js";
@@ -90,6 +91,10 @@ export function daemonLog(msg: string): void {
 export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   const port = config.port ?? DEFAULT_PORT;
   const host = config.host ?? DEFAULT_HOST;
+
+  // Load config from disk first
+  await centralConfig.load();
+  daemonLog("Configuration loaded from disk");
 
   // Write PID file
   writeFileSync(PID_FILE, process.pid.toString());

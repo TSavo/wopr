@@ -98,6 +98,12 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     if (existsSync(pkgPath)) {
       console.log(`[plugins] Installing dependencies for ${repo}...`);
       execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+      
+      // Build TypeScript plugins if tsconfig.json exists
+      if (existsSync(join(pluginDir, "tsconfig.json"))) {
+        console.log(`[plugins] Building TypeScript plugin...`);
+        execSync("npm run build", { cwd: pluginDir, stdio: "inherit" });
+      }
     }
 
     // Read package.json for metadata
@@ -130,6 +136,12 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     if (existsSync(pkgPath)) {
       console.log(`[plugins] Installing dependencies for local plugin...`);
       execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+      
+      // Build TypeScript plugins if tsconfig.json exists
+      if (existsSync(join(pluginDir, "tsconfig.json"))) {
+        console.log(`[plugins] Building TypeScript plugin...`);
+        execSync("npm run build", { cwd: pluginDir, stdio: "inherit" });
+      }
     }
 
     const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf-8")) : {};
