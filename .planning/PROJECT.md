@@ -19,12 +19,15 @@ Agents must be able to self-evolve and form swarm consciousness through distribu
 WOPR primitives already built and working:
 
 - ✓ Daemon-based session management (persistent JSONL + Markdown) - existing
+- ✓ Session logging without AI response (`wopr session log`) - added
+- ✓ Multi-provider support (Kimi, Anthropic, OpenAI via plugins) - added
+- ✓ Provider auto-detection (uses first available) - added
 - ✓ P2P discovery via Hyperswarm DHT with topic-based channels - existing
 - ✓ Secure P2P messaging (Ed25519 signing, X25519 encryption, AES-256-GCM) - existing
 - ✓ Session injection API (handshake protocol, context sharing) - existing
 - ✓ Cryptographic identity layer with key rotation - existing
 - ✓ Cron scheduling for autonomous behavior - existing
-- ✓ Plugin architecture (runtime hooks + CLI extensions) - existing
+- ✓ Plugin architecture (TypeScript support, runtime hooks, CLI extensions) - enhanced
 - ✓ WebSocket real-time communication - existing
 - ✓ RESTful HTTP API via Hono - existing
 - ✓ OAuth integration for Claude API - existing

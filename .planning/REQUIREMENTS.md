@@ -19,11 +19,14 @@ The understanding documents (`.planning/understanding/`) capture the vision:
 The primitives (already built):
 
 - [x] Session management (persistent JSONL + Markdown)
+- [x] Session logging (log context without AI response via `wopr session log`)
+- [x] Multi-provider support (Kimi, Anthropic, OpenAI via plugin registry)
+- [x] Provider auto-detection (uses first available provider)
 - [x] P2P discovery (Hyperswarm DHT, topic-based)
 - [x] Secure messaging (Ed25519, X25519, AES-256-GCM)
 - [x] Session injection (handshake, context sharing)
 - [x] Cron scheduling (autonomous behavior)
-- [x] Plugin architecture (runtime hooks, CLI extensions)
+- [x] Plugin architecture (runtime hooks, CLI extensions, TypeScript support)
 
 The patterns (proven in clawd):
 
