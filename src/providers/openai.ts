@@ -2,6 +2,7 @@
  * OpenAI Codex Provider
  *
  * Implements the ModelProvider interface for OpenAI's Codex Agent SDK
+ * Supports vision capabilities (beta)
  */
 
 import {
@@ -31,13 +32,37 @@ async function loadCodexSDK() {
 }
 
 /**
+ * Download image from URL and convert to base64
+ */
+async function downloadImageAsBase64(url: string): Promise<{ data: string; mediaType: string } | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    
+    return {
+      data: base64,
+      mediaType: contentType,
+    };
+  } catch (error) {
+    console.error(`[codex] Failed to download image ${url}:`, error);
+    return null;
+  }
+}
+
+/**
  * OpenAI Codex provider implementation
  * Uses the Codex agent SDK for agent-based code execution
  */
 export const codexProvider: ModelProvider = {
   id: "codex",
   name: "OpenAI Codex",
-  description: "OpenAI Codex agent SDK for coding tasks",
+  description: "OpenAI Codex agent SDK for coding tasks with vision support (beta)",
   defaultModel: "codex",
   supportedModels: ["codex"],
 
@@ -72,7 +97,7 @@ export const codexProvider: ModelProvider = {
 };
 
 /**
- * Codex client implementation
+ * Codex client implementation with vision support
  * Wraps the Codex agent SDK
  */
 class CodexClient implements ModelClient {
@@ -101,13 +126,37 @@ class CodexClient implements ModelClient {
     const client = await this.getClient();
 
     try {
-      // Use Codex agent for code execution
-      const q = await client.run({
+      // Prepare run options
+      const runOptions: any = {
         prompt: opts.prompt,
         systemPrompt: opts.systemPrompt,
         directory: process.cwd(),
         ...opts.providerOptions,
-      });
+      };
+
+      // Handle images for vision support
+      // Note: Codex SDK image support is currently in beta and may have issues
+      // See: https://github.com/openai/codex/issues/5773
+      if (opts.images && opts.images.length > 0) {
+        // Download and convert images to base64
+        const imageDataUrls = [];
+        for (const imageUrl of opts.images) {
+          const imageData = await downloadImageAsBase64(imageUrl);
+          if (imageData) {
+            imageDataUrls.push(`data:${imageData.mediaType};base64,${imageData.data}`);
+          }
+        }
+        
+        if (imageDataUrls.length > 0) {
+          // Codex SDK uses 'images' option for vision input
+          runOptions.images = imageDataUrls;
+          // Also add note to prompt about images
+          runOptions.prompt = `[User has shared ${imageDataUrls.length} image(s)]\n\n${opts.prompt}`;
+        }
+      }
+
+      // Use Codex agent for code execution
+      const q = await client.run(runOptions);
 
       // Stream results from Codex agent
       for await (const msg of q) {
