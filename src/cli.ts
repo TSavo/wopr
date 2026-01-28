@@ -7,7 +7,7 @@
  * that makes HTTP calls and formats output.
  */
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 
@@ -26,7 +26,6 @@ import { providerRegistry } from "./core/providers.js";
 // Ensure directories exist
 [WOPR_HOME, SESSIONS_DIR, SKILLS_DIR].forEach(dir => {
   if (!existsSync(dir)) {
-    const { mkdirSync } = require("fs");
     mkdirSync(dir, { recursive: true });
   }
 });
