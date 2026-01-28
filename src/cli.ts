@@ -278,11 +278,11 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
 
       case "health-check": {
         console.log("Checking provider health...");
-        await providerRegistry.checkHealth();
+        await client.checkProvidersHealth();
 
-        const providers = providerRegistry.listProviders();
-        const healthy = providers.filter(p => p.available);
-        const unhealthy = providers.filter(p => !p.available);
+        const providers = await client.getProviders();
+        const healthy = providers.filter((p: any) => p.available);
+        const unhealthy = providers.filter((p: any) => !p.available);
 
         if (healthy.length > 0) {
           console.log("\nHealthy:");
