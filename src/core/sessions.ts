@@ -344,7 +344,7 @@ export async function inject(
     }
   }
 
-  let response = collected.join("\n");
+  let response = collected.join("");
 
   const middlewareResponse = await applyOutgoingMiddlewares({
     session: name,
