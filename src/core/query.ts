@@ -56,14 +56,35 @@ export async function executeQuery(request: QueryRequest): Promise<ModelResponse
       providerOptions: request.providerOptions || config.options,
     };
 
-    // Execute query
-    const response = await resolved.client.query(options);
+    // Execute query (returns async generator for streaming)
+    const stream = resolved.client.query(options);
 
-    console.log(
-      `[Query] Used provider: ${response.provider} (${response.model})`
-    );
+    // Collect all chunks to build final response
+    const chunks: string[] = [];
+    let sessionId: string | undefined;
+    let providerUsed = resolved.provider.id;
+    let modelUsed = options.model || resolved.provider.defaultModel;
 
-    return response;
+    for await (const msg of stream) {
+      if (msg.type === "system" && msg.subtype === "init") {
+        sessionId = msg.session_id;
+      } else if (msg.type === "assistant") {
+        for (const block of msg.message?.content || []) {
+          if (block.type === "text") {
+            chunks.push(block.text);
+          }
+        }
+      }
+    }
+
+    console.log(`[Query] Used provider: ${providerUsed} (${modelUsed})`);
+
+    return {
+      content: chunks.join(""),
+      provider: providerUsed,
+      model: modelUsed,
+      sessionId,
+    };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error(`[Query] Failed: ${errorMsg}`);

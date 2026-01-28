@@ -42,8 +42,8 @@ export const anthropicProvider: ModelProvider = {
       const response = await query({
         prompt: "ping",
         options: {
-          maxTokens: 10,
-        },
+          max_tokens: 10,
+        } as any,
       });
 
       process.env.ANTHROPIC_API_KEY = oldKey;
@@ -82,7 +82,7 @@ class AnthropicClient implements ModelClient {
     const model = opts.model || anthropicProvider.defaultModel;
 
     const queryOptions: any = {
-      maxTokens: opts.maxTokens || 4096,
+      max_tokens: opts.maxTokens || 4096,
     };
 
     if (opts.systemPrompt) {
@@ -137,8 +137,8 @@ class AnthropicClient implements ModelClient {
       const response = await query({
         prompt: "test",
         options: {
-          maxTokens: 10,
-        },
+          max_tokens: 10,
+        } as any,
       });
 
       process.env.ANTHROPIC_API_KEY = oldKey;
