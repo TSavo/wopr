@@ -136,6 +136,43 @@ const skillsProvider: ContextProvider = {
 };
 
 /**
+ * Conversation history from session log
+ */
+const conversationHistoryProvider: ContextProvider = {
+  name: "conversation_history",
+  priority: 30,
+  enabled: true,
+  async getContext(session: string): Promise<ContextPart | null> {
+    try {
+      // Read conversation log for this session
+      const { readConversationLog } = await import("./sessions.js");
+      const entries = readConversationLog(session, 20); // Last 20 entries
+      
+      if (entries.length === 0) return null;
+      
+      // Format as conversation context
+      const formatted = entries.map(entry => {
+        const prefix = entry.from === "WOPR" ? "Assistant" : entry.from;
+        return `${prefix}: ${entry.content}`;
+      }).join("\n\n");
+      
+      return {
+        content: `Recent conversation history:\n${formatted}`,
+        role: "context",
+        metadata: { 
+          source: "conversation_log", 
+          priority: 30,
+          entryCount: entries.length
+        }
+      };
+    } catch (err) {
+      console.error(`[context] Failed to get conversation history:`, err);
+      return null;
+    }
+  }
+};
+
+/**
  * Channel adapter context (Discord, P2P, etc.)
  */
 const channelProvider: ContextProvider = {
@@ -311,6 +348,9 @@ export function initContextSystem(): void {
   }
   if (!contextProviders.has("skills")) {
     registerContextProvider(skillsProvider);
+  }
+  if (!contextProviders.has("conversation_history")) {
+    registerContextProvider(conversationHistoryProvider);
   }
   if (!contextProviders.has("channel_history")) {
     registerContextProvider(channelProvider);
