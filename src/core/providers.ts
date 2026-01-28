@@ -147,20 +147,27 @@ export class ProviderRegistry {
    * Check health of all providers
    */
   async checkHealth(): Promise<void> {
+    console.log(`[provider-registry] Checking health for ${this.providers.size} providers`);
     const checks = Array.from(this.providers.values()).map(async (reg) => {
       try {
+        console.log(`[provider-registry] Checking ${reg.provider.id}...`);
         const cred = this.credentials.get(reg.provider.id);
         const credType = reg.provider.getCredentialType?.() || "api-key";
+        console.log(`[provider-registry] ${reg.provider.id}: credType=${credType}, hasCred=${!!cred}`);
         
         // For OAuth providers, skip credential check
         if (!cred && credType !== "oauth") {
           reg.available = false;
           reg.error = "No credentials configured";
+          console.log(`[provider-registry] ${reg.provider.id}: skipped - no credentials`);
           return;
         }
 
+        console.log(`[provider-registry] ${reg.provider.id}: creating client...`);
         const client = await reg.provider.createClient(cred?.credential || "");
+        console.log(`[provider-registry] ${reg.provider.id}: running health check...`);
         const healthy = await client.healthCheck();
+        console.log(`[provider-registry] ${reg.provider.id}: health check result=${healthy}`);
 
         reg.available = healthy;
         reg.lastChecked = Date.now();
@@ -170,6 +177,7 @@ export class ProviderRegistry {
           reg.error = undefined;
         }
       } catch (error) {
+        console.error(`[provider-registry] ${reg.provider.id}: health check error:`, error);
         reg.available = false;
         reg.lastChecked = Date.now();
         reg.error = error instanceof Error ? error.message : "Unknown error";
@@ -177,6 +185,7 @@ export class ProviderRegistry {
     });
 
     await Promise.all(checks);
+    console.log(`[provider-registry] Health check complete`);
   }
 
   /**
