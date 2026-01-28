@@ -366,8 +366,10 @@ function createPluginContext(
     },
 
     registerProvider(provider: ModelProvider) {
+      console.log(`[plugins] Provider registration: ${provider.id} (${provider.name})`);
       providerPlugins.set(provider.id, provider);
       providerRegistry.register(provider);
+      console.log(`[plugins]   ✓ Provider ${provider.id} registered in registry`);
     },
 
     unregisterProvider(id: string) {
@@ -658,20 +660,36 @@ export async function loadAllPlugins(injectors: {
   getSessions: () => string[];
   getPeers: () => Peer[];
 }): Promise<void> {
+  console.log(`[plugins] loadAllPlugins starting...`);
+  console.log(`[plugins] WOPR_HOME: ${process.env.WOPR_HOME || "not set"}`);
+  
   const installed = getInstalledPlugins();
   console.log(`[plugins] Found ${installed.length} installed plugins`);
   
+  for (const p of installed) {
+    console.log(`[plugins]  - ${p.name}: enabled=${p.enabled}, path=${p.path}`);
+  }
+  
+  let loadedCount = 0;
   for (const plugin of installed) {
-    console.log(`[plugins] Checking ${plugin.name}: enabled=${plugin.enabled}`);
-    if (!plugin.enabled) continue;
+    console.log(`[plugins] Processing ${plugin.name}...`);
+    if (!plugin.enabled) {
+      console.log(`[plugins]   Skipping ${plugin.name} (disabled)`);
+      continue;
+    }
     
+    console.log(`[plugins]   Loading ${plugin.name} from ${plugin.path}...`);
     try {
       await loadPlugin(plugin, injectors);
-      console.log(`[plugins] Loaded: ${plugin.name}`);
-    } catch (err) {
-      console.error(`[plugins] Failed to load ${plugin.name}:`, err);
+      loadedCount++;
+      console.log(`[plugins]   ✓ Loaded: ${plugin.name}`);
+    } catch (err: any) {
+      console.error(`[plugins]   ✗ Failed to load ${plugin.name}:`, err.message);
+      console.error(`[plugins]     Stack:`, err.stack?.substring(0, 200));
     }
   }
+  
+  console.log(`[plugins] loadAllPlugins complete. Loaded ${loadedCount}/${installed.length} plugins`);
 }
 
 export async function shutdownAllPlugins(): Promise<void> {

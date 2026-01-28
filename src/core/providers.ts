@@ -36,11 +36,13 @@ export class ProviderRegistry {
    * Register a provider
    */
   register(provider: ModelProvider): void {
+    console.log(`[provider-registry] Registering: ${provider.id} (${provider.name})`);
     this.providers.set(provider.id, {
       provider,
       available: false,
       lastChecked: 0,
     });
+    console.log(`[provider-registry]   ✓ ${provider.id} registered. Total: ${this.providers.size}`);
   }
 
   /**
