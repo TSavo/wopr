@@ -60,6 +60,26 @@ export interface WebUiExtension {
   category?: string;
 }
 
+export interface UiComponentExtension {
+  id: string;
+  title: string;
+  moduleUrl: string;
+  slot: 'sidebar' | 'settings' | 'statusbar' | 'chat-header' | 'chat-footer';
+  description?: string;
+}
+
+export interface PluginUiComponentProps {
+  api: {
+    getSessions: () => Promise<{ sessions: Session[] }>;
+    inject: (session: string, message: string) => Promise<InjectResponse>;
+    getConfig: () => Promise<WoprConfig>;
+    setConfigValue: (key: string, value: any) => Promise<void>;
+  };
+  currentSession?: string;
+  pluginConfig: any;
+  saveConfig: (config: any) => Promise<void>;
+}
+
 export interface InjectResponse {
   session: string;
   sessionId: string;
@@ -151,6 +171,11 @@ export const api = {
   // Web UI Extensions
   async getWebUiExtensions(): Promise<{ extensions: WebUiExtension[] }> {
     return request("/plugins/ui");
+  },
+
+  // UI Component Extensions
+  async getUiComponents(): Promise<{ components: UiComponentExtension[] }> {
+    return request("/plugins/components");
   },
 
   // Identity

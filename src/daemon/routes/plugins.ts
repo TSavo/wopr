@@ -14,6 +14,7 @@ import {
   removeRegistry,
   listRegistries,
   getWebUiExtensions,
+  getUiComponents,
 } from "../../plugins.js";
 
 export const pluginsRouter = new Hono();
@@ -37,6 +38,12 @@ pluginsRouter.get("/", (c) => {
 pluginsRouter.get("/ui", (c) => {
   const extensions = getWebUiExtensions();
   return c.json({ extensions });
+});
+
+// List plugin-provided UI components
+pluginsRouter.get("/components", (c) => {
+  const components = getUiComponents();
+  return c.json({ components });
 });
 
 // Install plugin

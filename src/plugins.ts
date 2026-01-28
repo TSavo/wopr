@@ -23,6 +23,7 @@ import {
   MiddlewareInput,
   MiddlewareOutput,
   WebUiExtension,
+  UiComponentExtension,
 } from "./types.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
@@ -41,6 +42,7 @@ const contextProviders: Map<string, ContextProvider> = new Map();
 const channelAdapters: Map<string, ChannelAdapter> = new Map();
 const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
 const webUiExtensions: Map<string, WebUiExtension> = new Map();
+const uiComponents: Map<string, UiComponentExtension> = new Map();
 
 function channelKey(channel: ChannelRef): string {
   return `${channel.type}:${channel.id}`;
@@ -290,6 +292,18 @@ function createPluginContext(
       return Array.from(webUiExtensions.values());
     },
 
+    registerUiComponent(extension: UiComponentExtension) {
+      uiComponents.set(`${pluginName}:${extension.id}`, extension);
+    },
+
+    unregisterUiComponent(id: string) {
+      uiComponents.delete(`${pluginName}:${id}`);
+    },
+
+    getUiComponents() {
+      return Array.from(uiComponents.values());
+    },
+
     getConfig<T>(): T {
       // Load from central config
       const cfg = centralConfig.get();
@@ -381,6 +395,10 @@ export function getLoadedPlugin(name: string): { plugin: WOPRPlugin; context: WO
 
 export function getWebUiExtensions(): WebUiExtension[] {
   return Array.from(webUiExtensions.values());
+}
+
+export function getUiComponents(): UiComponentExtension[] {
+  return Array.from(uiComponents.values());
 }
 
 // ============================================================================

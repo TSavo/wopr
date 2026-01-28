@@ -299,6 +299,34 @@ export interface WebUiExtension {
   category?: string;    // Optional grouping (e.g., "core", "integrations", "tools")
 }
 
+// UI Component Extension - plugins export SolidJS components that render inline
+export interface UiComponentExtension {
+  id: string;           // Unique identifier (scoped to plugin)
+  title: string;        // Display name
+  // URL to the ES module that exports the component as default
+  // The module should export: export default function MyComponent(props) { ... }
+  moduleUrl: string;
+  slot: 'sidebar' | 'settings' | 'statusbar' | 'chat-header' | 'chat-footer';
+  description?: string;
+}
+
+// Props passed to plugin UI components
+export interface PluginUiComponentProps {
+  // API client for making requests to WOPR daemon
+  api: {
+    getSessions: () => Promise<{ sessions: any[] }>;
+    inject: (session: string, message: string) => Promise<any>;
+    getConfig: () => Promise<any>;
+    setConfigValue: (key: string, value: any) => Promise<void>;
+  };
+  // Current session context (if in chat view)
+  currentSession?: string;
+  // Plugin's own config
+  pluginConfig: any;
+  // Save plugin config
+  saveConfig: (config: any) => Promise<void>;
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   inject(session: string, message: string, onStream?: StreamCallback): Promise<string>;
@@ -341,6 +369,11 @@ export interface WOPRPluginContext {
   registerWebUiExtension(extension: WebUiExtension): void;
   unregisterWebUiExtension(id: string): void;
   getWebUiExtensions(): WebUiExtension[];
+
+  // UI Component extensions - plugins register SolidJS components
+  registerUiComponent(extension: UiComponentExtension): void;
+  unregisterUiComponent(id: string): void;
+  getUiComponents(): UiComponentExtension[];
 
   // Plugin's own config
   getConfig<T = any>(): T;

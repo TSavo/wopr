@@ -1,6 +1,70 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
-import { api, type Session, type StreamEvent, type WebUiExtension } from "./lib/api";
+import { 
+  Component, 
+  createSignal, 
+  onMount, 
+  onCleanup, 
+  For, 
+  Show,
+  lazy,
+  Suspense,
+  createResource,
+  createMemo
+} from "solid-js";
+import { Dynamic } from "solid-js/web";
+import { api, type Session, type StreamEvent, type WebUiExtension, type UiComponentExtension, type PluginUiComponentProps } from "./lib/api";
 import Settings from "./components/Settings";
+
+// Cache for dynamically imported components
+const componentCache = new Map<string, any>();
+
+// Load a plugin component from its module URL
+async function loadPluginComponent(moduleUrl: string) {
+  if (componentCache.has(moduleUrl)) {
+    return componentCache.get(moduleUrl);
+  }
+  
+  try {
+    const module = await import(/* @vite-ignore */ moduleUrl);
+    const component = module.default;
+    componentCache.set(moduleUrl, component);
+    return component;
+  } catch (err) {
+    console.error(`Failed to load component from ${moduleUrl}:`, err);
+    return null;
+  }
+}
+
+// Component that renders a plugin UI component
+const PluginComponent: Component<{
+  componentDef: UiComponentExtension;
+  api: PluginUiComponentProps['api'];
+  currentSession?: string;
+}> = (props) => {
+  const [Component] = createResource(
+    () => props.componentDef.moduleUrl,
+    loadPluginComponent
+  );
+
+  const componentProps = createMemo(() => ({
+    api: props.api,
+    currentSession: props.currentSession,
+    pluginConfig: {}, // TODO: fetch plugin config
+    saveConfig: async () => {}, // TODO: implement
+  }));
+
+  return (
+    <Suspense fallback={<div class="p-2 text-wopr-muted text-sm">Loading...</div>}>
+      <Show when={Component()}>
+        <div class="plugin-component border-t border-wopr-border/50 pt-3 mt-3">
+          <div class="text-xs font-semibold text-wopr-muted uppercase mb-2">
+            {props.componentDef.title}
+          </div>
+          <Dynamic component={Component()} {...componentProps()} />
+        </div>
+      </Show>
+    </Suspense>
+  );
+};
 
 const App: Component = () => {
   const [view, setView] = createSignal<"chat" | "settings">("chat");
@@ -11,8 +75,34 @@ const App: Component = () => {
   const [streaming, setStreaming] = createSignal(false);
   const [connected, setConnected] = createSignal(false);
   const [extensions, setExtensions] = createSignal<WebUiExtension[]>([]);
+  const [uiComponents, setUiComponents] = createSignal<UiComponentExtension[]>([]);
 
   let ws: WebSocket | null = null;
+
+  // API object passed to plugin components
+  const pluginApi: PluginUiComponentProps['api'] = {
+    getSessions: api.getSessions,
+    inject: api.inject,
+    getConfig: api.getConfig,
+    setConfigValue: api.setConfigValue,
+  };
+
+  // Group components by slot
+  const sidebarComponents = createMemo(() => 
+    uiComponents().filter(c => c.slot === 'sidebar')
+  );
+  const settingsComponents = createMemo(() => 
+    uiComponents().filter(c => c.slot === 'settings')
+  );
+  const statusbarComponents = createMemo(() => 
+    uiComponents().filter(c => c.slot === 'statusbar')
+  );
+  const chatHeaderComponents = createMemo(() => 
+    uiComponents().filter(c => c.slot === 'chat-header')
+  );
+  const chatFooterComponents = createMemo(() => 
+    uiComponents().filter(c => c.slot === 'chat-footer')
+  );
 
   onMount(async () => {
     // Load sessions
@@ -25,6 +115,14 @@ const App: Component = () => {
       setExtensions(extData.extensions);
     } catch (err) {
       console.error("Failed to load extensions:", err);
+    }
+
+    // Load UI components
+    try {
+      const compData = await api.getUiComponents();
+      setUiComponents(compData.components);
+    } catch (err) {
+      console.error("Failed to load UI components:", err);
     }
 
     // Connect WebSocket
@@ -118,6 +216,18 @@ const App: Component = () => {
               Settings
             </button>
           </div>
+          
+          {/* Status bar plugin components */}
+          <For each={statusbarComponents()}>
+            {(comp) => (
+              <PluginComponent 
+                componentDef={comp} 
+                api={pluginApi}
+                currentSession={selectedSession() || undefined}
+              />
+            )}
+          </For>
+          
           <div class="flex items-center gap-2">
             <span class={`w-2 h-2 rounded-full ${connected() ? "bg-green-500" : "bg-red-500"}`} />
             <span class="text-sm text-wopr-muted">
@@ -163,7 +273,18 @@ const App: Component = () => {
               </For>
             </ul>
 
-            {/* Plugin Extensions */}
+            {/* Sidebar plugin components */}
+            <For each={sidebarComponents()}>
+              {(comp) => (
+                <PluginComponent 
+                  componentDef={comp} 
+                  api={pluginApi}
+                  currentSession={selectedSession() || undefined}
+                />
+              )}
+            </For>
+
+            {/* Plugin Extensions (links) */}
             <Show when={extensions().length > 0}>
               <div class="mt-6">
                 <h2 class="text-sm font-semibold text-wopr-muted uppercase mb-3">Extensions</h2>
@@ -196,6 +317,19 @@ const App: Component = () => {
         <main class="flex-1 flex flex-col">
           <Show when={view() === "settings"}>
             <Settings />
+            
+            {/* Settings plugin components */}
+            <For each={settingsComponents()}>
+              {(comp) => (
+                <div class="p-4 border-t border-wopr-border">
+                  <PluginComponent 
+                    componentDef={comp} 
+                    api={pluginApi}
+                    currentSession={selectedSession() || undefined}
+                  />
+                </div>
+              )}
+            </For>
           </Show>
 
           <Show when={view() === "chat"}>
@@ -207,6 +341,19 @@ const App: Component = () => {
                 </div>
               }
             >
+              {/* Chat header plugin components */}
+              <For each={chatHeaderComponents()}>
+                {(comp) => (
+                  <div class="px-4 py-2 border-b border-wopr-border bg-wopr-panel/50">
+                    <PluginComponent 
+                      componentDef={comp} 
+                      api={pluginApi}
+                      currentSession={selectedSession() || undefined}
+                    />
+                  </div>
+                )}
+              </For>
+              
               {/* Response area */}
               <div class="flex-1 p-6 overflow-auto">
                 <div class="max-w-4xl mx-auto">
@@ -222,6 +369,19 @@ const App: Component = () => {
 
               {/* Input area */}
               <div class="border-t border-wopr-border p-4">
+                {/* Chat footer plugin components */}
+                <For each={chatFooterComponents()}>
+                  {(comp) => (
+                    <div class="mb-3">
+                      <PluginComponent 
+                        componentDef={comp} 
+                        api={pluginApi}
+                        currentSession={selectedSession() || undefined}
+                      />
+                    </div>
+                  )}
+                </For>
+                
                 <form onSubmit={handleSubmit} class="max-w-4xl mx-auto flex gap-3">
                   <textarea
                     value={message()}
