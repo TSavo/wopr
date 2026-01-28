@@ -360,6 +360,24 @@ export interface MultimodalMessage {
   images?: string[];  // URLs of images
 }
 
+// Config schema for provider/plugin configuration UI
+export interface ConfigField {
+  name: string;
+  type: "text" | "password" | "select" | "checkbox" | "number";
+  label: string;
+  placeholder?: string;
+  required?: boolean;
+  default?: any;
+  options?: { value: string; label: string }[]; // For select type
+  description?: string;
+}
+
+export interface ConfigSchema {
+  title: string;
+  description?: string;
+  fields: ConfigField[];
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   // Supports multimodal messages with images
@@ -422,6 +440,11 @@ export interface WOPRPluginContext {
   registerProvider(provider: import("./types/provider.js").ModelProvider): void;
   unregisterProvider(id: string): void;
   getProvider(id: string): import("./types/provider.js").ModelProvider | undefined;
+
+  // Config schemas - plugins register their configuration UI schema
+  registerConfigSchema(pluginId: string, schema: ConfigSchema): void;
+  unregisterConfigSchema(pluginId: string): void;
+  getConfigSchema(pluginId: string): ConfigSchema | undefined;
 
   // Logging
   log: PluginLogger;

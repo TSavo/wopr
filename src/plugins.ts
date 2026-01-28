@@ -24,6 +24,7 @@ import {
   WebUiExtension,
   UiComponentExtension,
   ContextProvider,
+  ConfigSchema,
 } from "./types.js";
 import {
   registerContextProvider as registerCtxProvider,
@@ -57,6 +58,9 @@ const uiComponents: Map<string, UiComponentExtension> = new Map();
 
 // Provider plugins registry (for providers registered via plugins)
 const providerPlugins: Map<string, ModelProvider> = new Map();
+
+// Config schemas registry (pluginId -> schema)
+const configSchemas: Map<string, ConfigSchema> = new Map();
 
 function channelKey(channel: ChannelRef): string {
   return `${channel.type}:${channel.id}`;
@@ -363,6 +367,18 @@ function createPluginContext(
       return providerPlugins.get(id) || providerRegistry.listProviders().find(p => p.id === id) as unknown as ModelProvider;
     },
 
+    registerConfigSchema(pluginId: string, schema: ConfigSchema) {
+      configSchemas.set(pluginId, schema);
+    },
+
+    unregisterConfigSchema(pluginId: string) {
+      configSchemas.delete(pluginId);
+    },
+
+    getConfigSchema(pluginId: string): ConfigSchema | undefined {
+      return configSchemas.get(pluginId);
+    },
+
     log: createPluginLogger(plugin.name),
 
     getPluginDir(): string {
@@ -435,6 +451,21 @@ export function getWebUiExtensions(): WebUiExtension[] {
 
 export function getUiComponents(): UiComponentExtension[] {
   return Array.from(uiComponents.values());
+}
+
+// ============================================================================
+// Config Schemas
+// ============================================================================
+
+export function getConfigSchemas(): Map<string, ConfigSchema> {
+  return configSchemas;
+}
+
+export function listConfigSchemas(): { pluginId: string; schema: ConfigSchema }[] {
+  return Array.from(configSchemas.entries()).map(([pluginId, schema]) => ({
+    pluginId,
+    schema,
+  }));
 }
 
 // ============================================================================

@@ -4,6 +4,7 @@
 
 import { Hono } from "hono";
 import { providerRegistry } from "../../core/providers.js";
+import { listConfigSchemas } from "../../plugins.js";
 
 export const providersRouter = new Hono();
 
@@ -60,4 +61,10 @@ providersRouter.post("/health", async (c) => {
       available: p.available,
     })),
   });
+});
+
+// Get all config schemas (for provider/plugin configuration UI)
+providersRouter.get("/schemas", (c) => {
+  const schemas = listConfigSchemas();
+  return c.json({ schemas });
 });
