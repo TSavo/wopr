@@ -290,7 +290,11 @@ function createPluginContext(
     },
 
     getMiddlewares() {
-      return Array.from(messageMiddlewares.values());
+      return getSortedMiddlewares();
+    },
+
+    getMiddlewareChain() {
+      return getMiddlewareChain();
     },
 
     registerWebUiExtension(extension: WebUiExtension) {
@@ -487,27 +491,62 @@ export function getChannelsForSession(session: string): ChannelAdapter[] {
 }
 
 export function getMiddlewares(): MessageMiddleware[] {
-  return Array.from(messageMiddlewares.values());
+  return getSortedMiddlewares();
+}
+
+export function getMiddlewareChain(): { name: string; priority: number; enabled: boolean }[] {
+  return getSortedMiddlewares().map(m => ({
+    name: m.name,
+    priority: m.priority ?? 100,
+    enabled: m.enabled !== false
+  }));
+}
+
+function getSortedMiddlewares(): MessageMiddleware[] {
+  return Array.from(messageMiddlewares.values())
+    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+}
+
+function isMiddlewareEnabled(middleware: MessageMiddleware, data: MiddlewareInput | MiddlewareOutput): boolean {
+  if (typeof middleware.enabled === "function") {
+    return middleware.enabled(data);
+  }
+  return middleware.enabled !== false;
 }
 
 export async function applyIncomingMiddlewares(input: MiddlewareInput): Promise<string | null> {
   let message = input.message;
-  for (const middleware of messageMiddlewares.values()) {
+  
+  for (const middleware of getSortedMiddlewares()) {
     if (!middleware.onIncoming) continue;
-    const result = await middleware.onIncoming({ ...input, message });
-    if (result === null) return null;
-    message = result;
+    if (!isMiddlewareEnabled(middleware, input)) continue;
+    
+    try {
+      const result = await middleware.onIncoming({ ...input, message });
+      if (result === null) return null;
+      message = result;
+    } catch (err) {
+      console.error(`[middleware] ${middleware.name} failed on incoming:`, err);
+      // Continue to next middleware or block? Let's continue for resilience
+    }
   }
   return message;
 }
 
 export async function applyOutgoingMiddlewares(output: MiddlewareOutput): Promise<string | null> {
   let response = output.response;
-  for (const middleware of messageMiddlewares.values()) {
+  
+  for (const middleware of getSortedMiddlewares()) {
     if (!middleware.onOutgoing) continue;
-    const result = await middleware.onOutgoing({ ...output, response });
-    if (result === null) return null;
-    response = result;
+    if (!isMiddlewareEnabled(middleware, output)) continue;
+    
+    try {
+      const result = await middleware.onOutgoing({ ...output, response });
+      if (result === null) return null;
+      response = result;
+    } catch (err) {
+      console.error(`[middleware] ${middleware.name} failed on outgoing:`, err);
+    }
   }
   return response;
 }

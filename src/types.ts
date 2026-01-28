@@ -302,6 +302,8 @@ export interface MiddlewareOutput {
 
 export interface MessageMiddleware {
   name: string;
+  priority?: number;  // Lower = runs first (default: 100)
+  enabled?: boolean | ((input: MiddlewareInput | MiddlewareOutput) => boolean);
   onIncoming?(input: MiddlewareInput): Promise<string | null>;
   onOutgoing?(output: MiddlewareOutput): Promise<string | null>;
 }
@@ -388,6 +390,7 @@ export interface WOPRPluginContext {
   registerMiddleware(middleware: MessageMiddleware): void;
   unregisterMiddleware(name: string): void;
   getMiddlewares(): MessageMiddleware[];
+  getMiddlewareChain(): { name: string; priority: number; enabled: boolean }[];
 
   // Web UI extensions - plugins register navigation links
   registerWebUiExtension(extension: WebUiExtension): void;
