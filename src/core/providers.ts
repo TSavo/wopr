@@ -148,13 +148,16 @@ export class ProviderRegistry {
     const checks = Array.from(this.providers.values()).map(async (reg) => {
       try {
         const cred = this.credentials.get(reg.provider.id);
-        if (!cred) {
+        const credType = reg.provider.getCredentialType?.() || "api-key";
+        
+        // For OAuth providers, skip credential check
+        if (!cred && credType !== "oauth") {
           reg.available = false;
           reg.error = "No credentials configured";
           return;
         }
 
-        const client = await reg.provider.createClient(cred.credential);
+        const client = await reg.provider.createClient(cred?.credential || "");
         const healthy = await client.healthCheck();
 
         reg.available = healthy;
