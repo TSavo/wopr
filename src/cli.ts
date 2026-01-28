@@ -65,7 +65,8 @@ Usage:
 
   wopr session create <name> [context]   Create a session with optional context
   wopr session create <name> --provider <id> [--fallback chain]  Create with provider
-  wopr session inject <name> <message>   Inject a message into a session
+  wopr session inject <name> <message>   Inject a message into a session (gets AI response)
+  wopr session log <name> <message>      Log a message to session history (no AI response)
   wopr session list                      List all sessions
   wopr session show <name> [--limit N]   Show session details and conversation history
   wopr session delete <name>             Delete a session
@@ -396,6 +397,14 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
             console.error(`\n[wopr] Error: ${msg.content}`);
           }
         });
+        break;
+      case "log":
+        if (!args[0] || !args[1]) {
+          console.error("Usage: wopr session log <name> <message>");
+          process.exit(1);
+        }
+        await client.logMessage(args[0], args.slice(1).join(" "));
+        console.log(`[wopr] Logged message to session: ${args[0]}`);
         break;
       case "list": {
         const sessions = await client.getSessions();

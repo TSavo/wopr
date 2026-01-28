@@ -210,6 +210,13 @@ export class WoprClient {
     });
   }
 
+  async logMessage(session: string, message: string, from?: string): Promise<void> {
+    await this.request(`/sessions/${encodeURIComponent(session)}/log`, {
+      method: "POST",
+      body: JSON.stringify({ message, from: from || "cli" }),
+    });
+  }
+
   // Plugins
   async getPlugins(): Promise<any[]> {
     const data = await this.request<{ plugins: any[] }>("/plugins");

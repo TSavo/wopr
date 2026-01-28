@@ -11,7 +11,8 @@ import {
   setSessionContext,
   deleteSession,
   inject,
-  readConversationLog
+  readConversationLog,
+  logMessage
 } from "../../core/sessions.js";
 import { broadcastStream, broadcastInjection } from "../ws.js";
 
@@ -172,4 +173,22 @@ sessionsRouter.post("/:name/inject", async (c) => {
       cost: result.cost,
     });
   }
+});
+
+// Log message without triggering a response
+sessionsRouter.post("/:name/log", async (c) => {
+  const name = c.req.param("name");
+  const body = await c.req.json();
+  const { message, from = "api" } = body;
+
+  if (!message) {
+    return c.json({ error: "Message is required" }, 400);
+  }
+
+  logMessage(name, message, { from });
+
+  return c.json({
+    session: name,
+    logged: true,
+  });
 });
