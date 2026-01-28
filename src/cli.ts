@@ -204,7 +204,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
 
     switch (subcommand) {
       case "list": {
-        const providers = providerRegistry.listProviders();
+        const providers = await client.getProviders();
         if (providers.length === 0) {
           console.log("No providers registered.");
         } else {
@@ -248,7 +248,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         }
 
         try {
-          await providerRegistry.setCredential(providerId, credential);
+          await client.addProviderCredential(providerId, credential);
           console.log(`Credential added for provider: ${providerId}`);
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
