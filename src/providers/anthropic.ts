@@ -66,6 +66,30 @@ export const anthropicProvider: ModelProvider = {
 };
 
 /**
+ * Download image from URL and convert to base64
+ */
+async function downloadImageAsBase64(url: string): Promise<{ data: string; mediaType: string } | null> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const buffer = await response.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString('base64');
+    
+    return {
+      data: base64,
+      mediaType: contentType,
+    };
+  } catch (error) {
+    console.error(`[anthropic] Failed to download image ${url}:`, error);
+    return null;
+  }
+}
+
+/**
  * Anthropic client implementation
  * Wraps the Claude Agent SDK query function
  */
@@ -101,6 +125,35 @@ class AnthropicClient implements ModelClient {
       queryOptions.topP = opts.topP;
     }
 
+    // Handle images for vision models
+    let prompt = opts.prompt;
+    if (opts.images && opts.images.length > 0) {
+      // For vision, we need to format the prompt with image content
+      // Claude 3 supports vision through the Messages API with image blocks
+      const imageContents = [];
+      
+      for (const imageUrl of opts.images) {
+        const imageData = await downloadImageAsBase64(imageUrl);
+        if (imageData) {
+          imageContents.push({
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: imageData.mediaType,
+              data: imageData.data,
+            },
+          });
+        }
+      }
+      
+      // Store image content in providerOptions for the SDK to use
+      if (imageContents.length > 0) {
+        queryOptions.imageContents = imageContents;
+        // Also add a note to the prompt about the images
+        prompt = `[User has shared ${imageContents.length} image(s)]\n\n${prompt}`;
+      }
+    }
+
     // Merge provider-specific options
     if (opts.providerOptions) {
       Object.assign(queryOptions, opts.providerOptions);
@@ -109,7 +162,7 @@ class AnthropicClient implements ModelClient {
     try {
       // Use Claude Agent SDK query function - returns async generator
       const q = await query({
-        prompt: opts.prompt,
+        prompt: prompt,
         options: queryOptions,
       });
 

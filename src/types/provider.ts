@@ -80,6 +80,9 @@ export interface ModelQueryOptions {
   /** Top-p sampling */
   topP?: number;
 
+  /** Image URLs for vision models */
+  images?: string[];
+
   /** Provider-specific options */
   providerOptions?: Record<string, unknown>;
 }

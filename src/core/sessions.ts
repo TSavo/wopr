@@ -123,6 +123,7 @@ export interface InjectOptions {
   onStream?: StreamCallback;
   from?: string;
   channel?: ChannelRef;
+  images?: string[];  // URLs of images to include in the message
 }
 
 export interface InjectResult {
@@ -131,9 +132,14 @@ export interface InjectResult {
   cost: number;
 }
 
+export interface MultimodalMessage {
+  text: string;
+  images?: string[];  // URLs of images
+}
+
 export async function inject(
   name: string,
-  message: string,
+  message: string | MultimodalMessage,
   options?: InjectOptions
 ): Promise<InjectResult> {
   const sessions = getSessions();
@@ -147,6 +153,19 @@ export async function inject(
   let sessionId = existingSessionId || "";
   let cost = 0;
 
+  // Normalize message to MultimodalMessage format
+  let messageText: string;
+  let messageImages: string[] = options?.images || [];
+  
+  if (typeof message === 'string') {
+    messageText = message;
+  } else {
+    messageText = message.text;
+    if (message.images) {
+      messageImages = messageImages.concat(message.images);
+    }
+  }
+
   if (!silent) {
     console.log(`[wopr] Injecting into session: ${name}`);
     if (existingSessionId) {
@@ -154,11 +173,14 @@ export async function inject(
     } else {
       console.log(`[wopr] Creating new session`);
     }
+    if (messageImages.length > 0) {
+      console.log(`[wopr] Images: ${messageImages.length}`);
+    }
   }
 
   // Assemble context using the new provider system
   const messageInfo: MessageInfo = {
-    content: message,
+    content: messageText,
     from,
     channel,
     timestamp: Date.now()
@@ -190,7 +212,7 @@ export async function inject(
   const middlewareMessage = await applyIncomingMiddlewares({
     session: name,
     from,
-    message,
+    message: messageText,
     channel,
   });
 
@@ -208,7 +230,7 @@ export async function inject(
   appendToConversationLog(name, {
     ts: Date.now(),
     from,
-    content: middlewareMessage,
+    content: middlewareMessage + (messageImages.length > 0 ? `\n[Images: ${messageImages.join(', ')}]` : ''),
     type: "message",
     channel,
   });
@@ -256,9 +278,11 @@ export async function inject(
       systemPrompt: fullContext,
       resume: existingSessionId,
       model: resolvedProvider.provider.defaultModel,
+      images: messageImages.length > 0 ? messageImages : undefined,
     });
   } else {
     // Fallback: use hardcoded Anthropic query
+    // Note: fallback path doesn't support images (use provider plugins for full features)
     q = query({
       prompt: fullMessage,
       options: {
@@ -346,7 +370,7 @@ export async function inject(
   }
 
   // Emit final injection event for plugins that want complete responses
-  emitInjection(name, from, message, response);
+  emitInjection(name, from, messageText, response);
 
   return { response, sessionId, cost };
 }

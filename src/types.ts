@@ -355,9 +355,15 @@ export interface PluginUiComponentProps {
   saveConfig: (config: any) => Promise<void>;
 }
 
+export interface MultimodalMessage {
+  text: string;
+  images?: string[];  // URLs of images
+}
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
-  inject(session: string, message: string, onStream?: StreamCallback): Promise<string>;
+  // Supports multimodal messages with images
+  inject(session: string, message: string | MultimodalMessage, onStream?: StreamCallback): Promise<string>;
 
   // Inject to peer's session, get response
   injectPeer(peer: string, session: string, message: string): Promise<string>;
