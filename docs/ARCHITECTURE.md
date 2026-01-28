@@ -149,6 +149,8 @@ or move into plugins without touching session logic.
 Middlewares are pluggable, stackable processors that sit between channels and sessions. They can
 inspect, modify, or block incoming messages before they reach a session, and can also post-process
 responses before they return to a channel (e.g., security filters, formatting, or routing logic).
+Middleware implementations are installed as plugins and registered through the plugin context,
+with configuration stored under `plugins.data.<pluginName>` in the central config.
 
 Example mapping:
 
