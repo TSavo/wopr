@@ -244,14 +244,19 @@ export async function inject(
   // System context is the assembled system + any session file context as fallback
   const fullContext = assembled.system || context || `You are WOPR session "${name}".`;
 
-  // Load provider config from session or use defaults
+  // Load provider config from session or auto-detect available provider
   let providerConfig = getSessionProvider(name);
   if (!providerConfig) {
-    // Default: anthropic with fallback to codex
+    // Auto-detect: use first available provider
+    const available = providerRegistry.listProviders().filter(p => p.available);
+    if (available.length === 0) {
+      throw new Error("No providers available. Configure at least one provider or set session provider.");
+    }
     providerConfig = {
-      name: "anthropic",
-      fallback: ["codex"],
+      name: available[0].id,
     };
+    // Save this provider config for the session
+    setSessionProvider(name, providerConfig);
   }
 
   let resolvedProvider: any = null;
