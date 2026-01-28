@@ -25,6 +25,7 @@ import {
   UiComponentExtension,
   ContextProvider,
   ConfigSchema,
+  PluginInjectOptions,
 } from "./types.js";
 import {
   registerContextProvider as registerCtxProvider,
@@ -257,7 +258,7 @@ function addInstalledPlugin(plugin: InstalledPlugin): void {
 function createPluginContext(
   plugin: InstalledPlugin,
   injectors: {
-    inject: (session: string, message: string, options?: import("./types.js").PluginInjectOptions) => Promise<string>;
+    inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
     injectPeer: (peer: string, session: string, message: string) => Promise<string>;
     getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
     getSessions: () => string[];
@@ -267,7 +268,7 @@ function createPluginContext(
   const pluginName = plugin.name;
 
   return {
-    inject: (session: string, message: string, options?: import("./types.js").PluginInjectOptions) =>
+    inject: (session: string, message: string, options?: PluginInjectOptions) =>
       injectors.inject(session, message, options),
     injectPeer: injectors.injectPeer,
     getIdentity: injectors.getIdentity,
@@ -666,7 +667,7 @@ function createPluginLogger(pluginName: string): PluginLogger {
 // ============================================================================
 
 export async function loadAllPlugins(injectors: {
-  inject: (session: string, message: string, onStream?: StreamCallback) => Promise<string>;
+  inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
   injectPeer: (peer: string, session: string, message: string) => Promise<string>;
   getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
   getSessions: () => string[];
