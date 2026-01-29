@@ -28,12 +28,18 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
   let selectedChannels: string[];
   
   if (isQuickstart) {
-    // In QuickStart, just ask if they want Discord
+    // In QuickStart, ask about popular channels
     const wantDiscord = await confirm({
       message: "Set up Discord integration?",
       initialValue: false,
     });
-    selectedChannels = wantDiscord ? ["discord"] : [];
+    const wantSlack = await confirm({
+      message: "Set up Slack integration?",
+      initialValue: false,
+    });
+    selectedChannels = [];
+    if (wantDiscord) selectedChannels.push("discord");
+    if (wantSlack) selectedChannels.push("slack");
   } else {
     // Advanced: full multiselect
     const options = AVAILABLE_CHANNELS.map(c => ({
@@ -111,6 +117,21 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
       "",
       pc.blue("Docs: https://github.com/TSavo/wopr-plugin-discord"),
     ].join("\n"), "Discord Setup");
+  }
+  
+  if (installed.includes("slack")) {
+    await note([
+      "Slack plugin installed!",
+      "",
+      "Next steps:",
+      "  1. Create a Slack app at https://api.slack.com/apps",
+      "  2. Enable Socket Mode",
+      "  3. Generate App-Level Token (xapp-...)",
+      "  4. Install to workspace, copy Bot Token (xoxb-...)",
+      "  5. Configure with: wopr configure --plugin slack",
+      "",
+      pc.blue("Docs: https://github.com/TSavo/wopr-plugin-slack"),
+    ].join("\n"), "Slack Setup");
   }
   
   return { channels: installed };

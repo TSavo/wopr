@@ -69,6 +69,7 @@ export const AVAILABLE_PROVIDERS = [
 // Available channel plugins
 export const AVAILABLE_CHANNELS = [
   { id: "discord", name: "Discord", description: "Discord bot integration", npm: "wopr-plugin-discord" },
+  { id: "slack", name: "Slack", description: "Slack workspace integration", npm: "wopr-plugin-slack" },
   { id: "p2p", name: "P2P Network", description: "Peer-to-peer messaging (built-in)", npm: null },
 ] as const;
 
