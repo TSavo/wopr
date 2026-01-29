@@ -32,6 +32,54 @@ if (!existsSync(SESSIONS_DIR)) {
   mkdirSync(SESSIONS_DIR, { recursive: true });
 }
 
+// ============================================================================
+// Serialized Inject Queue per Session
+// ============================================================================
+
+interface PendingInject {
+  promise: Promise<InjectResult>;
+  abortController: AbortController;
+  startTime: number;
+}
+
+// Track pending injects per session for serialization
+const pendingInjects: Map<string, PendingInject> = new Map();
+
+/**
+ * Cancel any running inject for a session
+ */
+export function cancelInject(session: string): boolean {
+  const pending = pendingInjects.get(session);
+  if (pending) {
+    pending.abortController.abort();
+    pendingInjects.delete(session);
+    logger.info(`[sessions] Cancelled inject for session: ${session}`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a session has a pending inject
+ */
+export function hasPendingInject(session: string): boolean {
+  return pendingInjects.has(session);
+}
+
+/**
+ * Wait for pending inject to complete (for serialization)
+ */
+async function waitForPendingInject(session: string): Promise<void> {
+  const pending = pendingInjects.get(session);
+  if (pending) {
+    try {
+      await pending.promise;
+    } catch (e) {
+      // Ignore errors from previous inject
+    }
+  }
+}
+
 export interface Session {
   name: string;
   id?: string;
@@ -161,6 +209,41 @@ export async function inject(
   message: string | MultimodalMessage,
   options?: InjectOptions
 ): Promise<InjectResult> {
+  // SERIALIZATION: Wait for any pending inject on this session to complete
+  await waitForPendingInject(name);
+  
+  // Create abort controller for cancellation
+  const abortController = new AbortController();
+  const abortSignal = abortController.signal;
+  
+  // Create the inject promise
+  const injectPromise = executeInject(name, message, options, abortSignal);
+  
+  // Track this pending inject
+  pendingInjects.set(name, {
+    promise: injectPromise,
+    abortController,
+    startTime: Date.now(),
+  });
+  
+  try {
+    const result = await injectPromise;
+    return result;
+  } finally {
+    // Clean up pending inject
+    pendingInjects.delete(name);
+  }
+}
+
+/**
+ * Internal inject execution
+ */
+async function executeInject(
+  name: string,
+  message: string | MultimodalMessage,
+  options?: InjectOptions,
+  abortSignal?: AbortSignal
+): Promise<InjectResult> {
   const sessions = getSessions();
   const existingSessionId = sessions[name];
   const context = getSessionContext(name);
@@ -171,6 +254,11 @@ export async function inject(
   const collected: string[] = [];
   let sessionId = existingSessionId || "";
   let cost = 0;
+
+  // Check if aborted
+  if (abortSignal?.aborted) {
+    throw new Error("Inject cancelled");
+  }
 
   // Normalize message to MultimodalMessage format
   let messageText: string;
@@ -319,6 +407,12 @@ export async function inject(
   }
 
   for await (const msg of q) {
+    // Check for cancellation
+    if (abortSignal?.aborted) {
+      logger.info(`[wopr] Inject cancelled mid-stream for session: ${name}`);
+      throw new Error("Inject cancelled");
+    }
+    
     logger.info(`[inject] Got msg type: ${msg.type}`, JSON.stringify(msg).substring(0, 200));
     switch (msg.type) {
       case "system":
