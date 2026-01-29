@@ -403,6 +403,217 @@ export interface PluginInjectOptions {
   images?: string[];
 }
 
+// ============================================================================
+// Event Bus Types
+// ============================================================================
+
+/**
+ * Base event interface - all events extend this
+ */
+export interface WOPREvent {
+  type: string;
+  payload: any;
+  timestamp: number;
+  source?: string;
+}
+
+// Session lifecycle events
+export interface SessionCreateEvent {
+  session: string;
+  config?: any;
+}
+
+export interface SessionInjectEvent {
+  session: string;
+  message: string;
+  from: string;
+  channel?: { type: string; id: string; name?: string };
+}
+
+export interface SessionResponseEvent {
+  session: string;
+  message: string;
+  response: string;
+  from: string;
+}
+
+export interface SessionResponseChunkEvent extends SessionResponseEvent {
+  chunk: string;
+}
+
+export interface SessionDestroyEvent {
+  session: string;
+  history: any[];
+  reason?: string;
+}
+
+// Channel events
+export interface ChannelMessageEvent {
+  channel: { type: string; id: string; name?: string };
+  message: string;
+  from: string;
+  metadata?: any;
+}
+
+export interface ChannelSendEvent {
+  channel: { type: string; id: string };
+  content: string;
+}
+
+// Plugin events
+export interface PluginInitEvent {
+  plugin: string;
+  version: string;
+}
+
+export interface PluginErrorEvent {
+  plugin: string;
+  error: Error;
+  context?: string;
+}
+
+// Config events
+export interface ConfigChangeEvent {
+  key: string;
+  oldValue: any;
+  newValue: any;
+  plugin?: string;
+}
+
+// System events
+export interface SystemShutdownEvent {
+  reason: string;
+  code?: number;
+}
+
+/**
+ * Event map - all core events and their payloads
+ */
+export interface WOPREventMap {
+  "session:create": SessionCreateEvent;
+  "session:beforeInject": SessionInjectEvent;
+  "session:afterInject": SessionResponseEvent;
+  "session:responseChunk": SessionResponseChunkEvent;
+  "session:destroy": SessionDestroyEvent;
+  "channel:message": ChannelMessageEvent;
+  "channel:send": ChannelSendEvent;
+  "plugin:beforeInit": PluginInitEvent;
+  "plugin:afterInit": PluginInitEvent;
+  "plugin:error": PluginErrorEvent;
+  "config:change": ConfigChangeEvent;
+  "system:shutdown": SystemShutdownEvent;
+  "*": WOPREvent;
+}
+
+/**
+ * Event handler type
+ */
+export type EventHandler<T = any> = (payload: T, event: WOPREvent) => void | Promise<void>;
+
+/**
+ * Event bus interface - reactive primitive for plugins
+ */
+export interface WOPREventBus {
+  /**
+   * Subscribe to an event
+   * @param event - Event name (e.g., 'session:create')
+   * @param handler - Handler function
+   * @returns Unsubscribe function
+   */
+  on<T extends keyof WOPREventMap>(
+    event: T,
+    handler: EventHandler<WOPREventMap[T]>
+  ): () => void;
+
+  /**
+   * Subscribe to an event once
+   * @param event - Event name
+   * @param handler - Handler function
+   */
+  once<T extends keyof WOPREventMap>(
+    event: T,
+    handler: EventHandler<WOPREventMap[T]>
+  ): void;
+
+  /**
+   * Unsubscribe from an event
+   * @param event - Event name
+   * @param handler - Handler function to remove
+   */
+  off<T extends keyof WOPREventMap>(
+    event: T,
+    handler: EventHandler<WOPREventMap[T]>
+  ): void;
+
+  /**
+   * Emit an event (for custom inter-plugin events)
+   * Use 'plugin:yourEvent' naming for custom events
+   * @param event - Event name
+   * @param payload - Event payload
+   */
+  emit<T extends keyof WOPREventMap>(
+    event: T,
+    payload: WOPREventMap[T]
+  ): Promise<void>;
+
+  /**
+   * Emit a custom event (for inter-plugin communication)
+   * @param event - Custom event name (use plugin: prefix)
+   * @param payload - Event payload
+   */
+  emitCustom(
+    event: string,
+    payload: any
+  ): Promise<void>;
+
+  /**
+   * Get number of listeners for an event
+   */
+  listenerCount(event: string): number;
+}
+
+/**
+ * Hook event with mutable state (for before hooks)
+ */
+export interface MutableHookEvent<T> {
+  data: T;
+  session: string;
+  /** Call to prevent further processing */
+  preventDefault(): void;
+  /** True if preventDefault was called */
+  isPrevented(): boolean;
+}
+
+/**
+ * Hook handler types
+ */
+export type BeforeInjectHandler = (event: MutableHookEvent<{ message: string; from: string; channel?: any }>) => void | Promise<void>;
+export type AfterInjectHandler = (event: { session: string; message: string; response: string; from: string }) => void | Promise<void>;
+export type SessionCreateHandler = (event: { session: string; config?: any }) => void | Promise<void>;
+export type SessionDestroyHandler = (event: { session: string; history: any[]; reason?: string }) => void | Promise<void>;
+export type ChannelMessageHandler = (event: MutableHookEvent<{ channel: any; message: string; from: string; metadata?: any }>) => void | Promise<void>;
+
+/**
+ * Hook manager - typed shorthand for common event patterns
+ */
+export interface WOPRHookManager {
+  on(event: "session:beforeInject", handler: BeforeInjectHandler): () => void;
+  on(event: "session:afterInject", handler: AfterInjectHandler): () => void;
+  on(event: "session:create", handler: SessionCreateHandler): () => void;
+  on(event: "session:destroy", handler: SessionDestroyHandler): () => void;
+  on(event: "channel:message", handler: ChannelMessageHandler): () => void;
+  
+  off(event: "session:beforeInject", handler: BeforeInjectHandler): void;
+  off(event: "session:afterInject", handler: AfterInjectHandler): void;
+  off(event: "session:create", handler: SessionCreateHandler): void;
+  off(event: "session:destroy", handler: SessionDestroyHandler): void;
+  off(event: "channel:message", handler: ChannelMessageHandler): void;
+}
+
+// ============================================================================
+// Plugin Context
+// ============================================================================
+
 export interface WOPRPluginContext {
   // Inject into local session, get response (with optional streaming)
   // Supports multimodal messages with images
@@ -430,11 +641,48 @@ export interface WOPRPluginContext {
   // Peers
   getPeers(): Peer[];
 
-  // Events - when sessions receive injections
+  // Events - when sessions receive injections (deprecated, use events API)
   on(event: "injection", handler: InjectionHandler): void;
   on(event: "stream", handler: StreamHandler): void;
   off(event: "injection", handler: InjectionHandler): void;
   off(event: "stream", handler: StreamHandler): void;
+
+  /**
+   * Event bus for reactive plugin composition.
+   * Exposes primitives - plugins compose their own behaviors.
+   * 
+   * @example
+   * // Subscribe to session creation
+   * ctx.events.on('session:create', ({ session, config }) => {
+   *   ctx.logger.info(`Session ${session} created`);
+   * });
+   * 
+   * // Emit custom events for inter-plugin communication
+   * ctx.events.emit('myplugin:custom', { data: 'value' });
+   * 
+   * // Subscribe once
+   * ctx.events.once('session:destroy', ({ session }) => {
+   *   ctx.logger.info(`Session ${session} destroyed`);
+   * });
+   */
+  events: WOPREventBus;
+
+  /**
+   * Register a hook - shorthand for common event patterns.
+   * Hooks are typed event handlers for core lifecycle.
+   * 
+   * @example
+   * // Hook before message injection (can modify message)
+   * ctx.hooks.on('session:beforeInject', async (event) => {
+   *   event.message = event.message.toUpperCase(); // mutate
+   * });
+   * 
+   * // Hook after response (read-only)
+   * ctx.hooks.on('session:afterInject', (event) => {
+   *   analytics.track(event.session, event.response.length);
+   * });
+   */
+  hooks: WOPRHookManager;
 
   // Context providers - plugins register context sources
   registerContextProvider(provider: ContextProvider): void;

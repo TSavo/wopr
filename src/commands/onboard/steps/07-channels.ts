@@ -37,6 +37,22 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
       message: "Set up Slack integration?",
       initialValue: false,
     });
+    const wantWhatsApp = await confirm({
+      message: "Set up WhatsApp integration?",
+      initialValue: false,
+    });
+    const wantTelegram = await confirm({
+      message: "Set up Telegram integration?",
+      initialValue: false,
+    });
+    const wantSignal = await confirm({
+      message: "Set up Signal integration?",
+      initialValue: false,
+    });
+    const wantMSTeams = await confirm({
+      message: "Set up Microsoft Teams integration?",
+      initialValue: false,
+    });
     // Only ask about iMessage on macOS
     let wantIMessage = false;
     if (process.platform === "darwin") {
@@ -48,6 +64,10 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
     selectedChannels = [];
     if (wantDiscord) selectedChannels.push("discord");
     if (wantSlack) selectedChannels.push("slack");
+    if (wantWhatsApp) selectedChannels.push("whatsapp");
+    if (wantTelegram) selectedChannels.push("telegram");
+    if (wantSignal) selectedChannels.push("signal");
+    if (wantMSTeams) selectedChannels.push("msteams");
     if (wantIMessage) selectedChannels.push("imessage");
   } else {
     // Advanced: full multiselect
@@ -159,6 +179,90 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
       "",
       pc.blue("Docs: https://github.com/TSavo/wopr-plugin-imessage"),
     ].join("\n"), "iMessage Setup");
+  }
+  
+  if (installed.includes("whatsapp")) {
+    await note([
+      "WhatsApp plugin installed!",
+      "",
+      "Next steps:",
+      "  1. Run: wopr channels login whatsapp",
+      "  2. Scan the QR code with WhatsApp",
+      "     (Settings → Linked Devices → Link a Device)",
+      "  3. Configure DM policy if needed:",
+      "     wopr configure --plugin whatsapp",
+      "",
+      "Self-chat mode (for personal phones):",
+      "  Set dmPolicy: 'allowlist' and add your number to allowFrom",
+      "",
+      pc.blue("Docs: https://github.com/TSavo/wopr-plugin-whatsapp"),
+    ].join("\n"), "WhatsApp Setup");
+  }
+  
+  if (installed.includes("signal")) {
+    await note([
+      "Signal plugin installed!",
+      "",
+      pc.yellow("⚠️  Requires signal-cli to be installed"),
+      "",
+      "Next steps:",
+      "  1. Install signal-cli:",
+      "     brew install signal-cli  (macOS)",
+      "  2. Register or link Signal account:",
+      "     signal-cli register      (new number)",
+      "     signal-cli link          (existing device)",
+      "  3. Configure WOPR:",
+      "     wopr configure --plugin signal",
+      "",
+      "The plugin will auto-start signal-cli daemon",
+      "",
+      pc.blue("Docs: https://github.com/TSavo/wopr-plugin-signal"),
+    ].join("\n"), "Signal Setup");
+  }
+  
+  if (installed.includes("telegram")) {
+    await note([
+      "Telegram plugin installed!",
+      "",
+      "Next steps:",
+      "  1. Create a Telegram bot:",
+      "     - Message @BotFather on Telegram",
+      "     - Run /newbot and follow instructions",
+      "     - Copy the bot token (123456:ABC...)",
+      "  2. Configure WOPR:",
+      "     wopr configure --plugin telegram",
+      "  3. (Optional) Disable privacy mode:",
+      "     @BotFather → Bot Settings → Group Privacy → Off",
+      "",
+      "Get your user ID from @userinfobot for allowlist",
+      "",
+      pc.blue("Docs: https://github.com/TSavo/wopr-plugin-telegram"),
+    ].join("\n"), "Telegram Setup");
+  }
+  
+  if (installed.includes("msteams")) {
+    await note([
+      "Microsoft Teams plugin installed!",
+      "",
+      pc.yellow("⚠️  Requires Azure Bot registration"),
+      "",
+      "Next steps:",
+      "  1. Create Azure Bot resource:",
+      "     - Go to Azure Portal → Create Azure Bot",
+      "     - Copy App ID, create Client Secret",
+      "     - Note your Tenant ID",
+      "  2. Configure messaging endpoint:",
+      "     - Set webhook URL in Azure Bot config",
+      "     - Use ngrok for local development",
+      "  3. Create Teams app:",
+      "     - Go to Teams Developer Portal",
+      "     - Add bot capability with App ID",
+      "     - Install/sideload the app",
+      "  4. Configure WOPR:",
+      "     wopr configure --plugin msteams",
+      "",
+      pc.blue("Docs: https://github.com/TSavo/wopr-plugin-msteams"),
+    ].join("\n"), "Microsoft Teams Setup");
   }
   
   return { channels: installed };

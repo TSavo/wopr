@@ -70,6 +70,10 @@ export const AVAILABLE_PROVIDERS = [
 export const AVAILABLE_CHANNELS = [
   { id: "discord", name: "Discord", description: "Discord bot integration", npm: "wopr-plugin-discord" },
   { id: "slack", name: "Slack", description: "Slack workspace integration", npm: "wopr-plugin-slack" },
+  { id: "whatsapp", name: "WhatsApp", description: "WhatsApp Web via Baileys", npm: "wopr-plugin-whatsapp" },
+  { id: "telegram", name: "Telegram", description: "Telegram Bot via Grammy", npm: "wopr-plugin-telegram" },
+  { id: "signal", name: "Signal", description: "Signal messaging via signal-cli", npm: "wopr-plugin-signal" },
+  { id: "msteams", name: "Microsoft Teams", description: "MS Teams via Azure Bot Framework", npm: "wopr-plugin-msteams" },
   { id: "imessage", name: "iMessage (macOS)", description: "iMessage/SMS via imsg CLI (macOS only)", npm: "wopr-plugin-imessage" },
   { id: "p2p", name: "P2P Network", description: "Peer-to-peer messaging (built-in)", npm: null },
 ] as const;

@@ -41,6 +41,15 @@ import type {
   MessageInfo 
 } from "./core/context.js";
 import { resolveIdentity, resolveUserProfile } from "./core/workspace.js";
+import { eventBus } from "./core/events.js";
+import type { 
+  WOPREventBus, 
+  WOPRHookManager, 
+  EventHandler,
+  MutableHookEvent,
+  SessionInjectEvent,
+  ChannelMessageEvent,
+} from "./types.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
 const PLUGINS_DIR = join(WOPR_HOME, "plugins");
@@ -288,6 +297,12 @@ function createPluginContext(
       pluginEvents.off(event, handler);
     },
 
+    // Event bus - reactive primitive for plugin composition
+    events: createPluginEventBus(pluginName),
+
+    // Hooks - typed shorthand for common event patterns
+    hooks: createPluginHookManager(pluginName),
+
     registerContextProvider(provider: ContextProvider) {
       registerCtxProvider(provider);
     },
@@ -427,6 +442,119 @@ function createPluginContext(
       return plugin.source === "local" ? plugin.path : join(PLUGINS_DIR, plugin.name);
     },
   };
+}
+
+/**
+ * Create an event bus instance scoped to a plugin
+ */
+function createPluginEventBus(pluginName: string): WOPREventBus {
+  return {
+    on<T extends keyof import("./types.js").WOPREventMap>(
+      event: T,
+      handler: EventHandler<import("./types.js").WOPREventMap[T]>
+    ): () => void {
+      // Wrap handler to identify plugin source
+      const wrappedHandler: EventHandler<any> = async (payload, evt) => {
+        // Add plugin source to event metadata
+        const eventWithSource = { ...evt, source: pluginName };
+        await handler(payload, eventWithSource);
+      };
+      
+      // Store reference for off()
+      (wrappedHandler as any)._original = handler;
+      
+      return eventBus.on(event, wrappedHandler);
+    },
+
+    once<T extends keyof import("./types.js").WOPREventMap>(
+      event: T,
+      handler: EventHandler<import("./types.js").WOPREventMap[T]>
+    ): void {
+      const wrappedHandler: EventHandler<any> = async (payload, evt) => {
+        const eventWithSource = { ...evt, source: pluginName };
+        await handler(payload, eventWithSource);
+      };
+      eventBus.once(event, wrappedHandler);
+    },
+
+    off<T extends keyof import("./types.js").WOPREventMap>(
+      event: T,
+      handler: EventHandler<import("./types.js").WOPREventMap[T]>
+    ): void {
+      eventBus.off(event, handler);
+    },
+
+    async emit<T extends keyof import("./types.js").WOPREventMap>(
+      event: T,
+      payload: import("./types.js").WOPREventMap[T]
+    ): Promise<void> {
+      await eventBus.emit(event, payload, pluginName);
+    },
+
+    async emitCustom(event: string, payload: any): Promise<void> {
+      await eventBus.emitCustom(event, payload, pluginName);
+    },
+
+    listenerCount(event: string): number {
+      return eventBus.listenerCount(event);
+    },
+  };
+}
+
+/**
+ * Create a hook manager scoped to a plugin
+ * Hooks provide typed, mutable access to core lifecycle events
+ */
+function createPluginHookManager(pluginName: string): WOPRHookManager {
+  const hookHandlers = new Map<string, Set<Function>>();
+
+  return {
+    on(event: string, handler: Function): () => void {
+      if (!hookHandlers.has(event)) {
+        hookHandlers.set(event, new Set());
+      }
+      hookHandlers.get(event)!.add(handler);
+
+      // Subscribe to underlying event bus
+      const unsubscribe = eventBus.on(event as any, async (payload, evt) => {
+        const handlers = hookHandlers.get(event);
+        if (!handlers) return;
+
+        // Create mutable event for before hooks
+        if (event === "session:beforeInject" || event === "channel:message") {
+          let prevented = false;
+          const mutableEvent: MutableHookEvent<any> = {
+            data: payload,
+            session: payload.session || "default",
+            preventDefault() { prevented = true; },
+            isPrevented() { return prevented; },
+          };
+
+          for (const h of handlers) {
+            await h(mutableEvent);
+            if (mutableEvent.isPrevented()) break;
+          }
+        } else {
+          // Read-only for after hooks
+          for (const h of handlers) {
+            await h(payload);
+          }
+        }
+      });
+
+      return () => {
+        hookHandlers.get(event)?.delete(handler);
+        if (hookHandlers.get(event)?.size === 0) {
+          hookHandlers.delete(event);
+        }
+        unsubscribe();
+      };
+    },
+
+    off(event: string, handler: Function): void {
+      hookHandlers.get(event)?.delete(handler);
+    },
+  } as WOPRHookManager;
 }
 
 export async function loadPlugin(

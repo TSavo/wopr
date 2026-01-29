@@ -23,6 +23,13 @@ import {
   type MessageInfo,
   type AssembledContext 
 } from "./context.js";
+import { 
+  emitSessionBeforeInject,
+  emitSessionAfterInject,
+  emitSessionResponseChunk,
+  emitSessionCreate,
+  emitSessionDestroy,
+} from "./events.js";
 
 // Initialize context system with defaults (async)
 const contextInitPromise = initContextSystem();
@@ -125,12 +132,41 @@ export function setSessionProvider(name: string, provider: ProviderConfig): void
   writeFileSync(providerFile, JSON.stringify(provider, null, 2));
 }
 
-export function deleteSession(name: string): void {
+export async function deleteSession(name: string, reason?: string): Promise<void> {
+  // Get conversation history before deletion
+  const history = getConversationHistory(name);
+  
   deleteSessionId(name);
   const contextFile = join(SESSIONS_DIR, `${name}.md`);
   if (existsSync(contextFile)) unlinkSync(contextFile);
   const providerFile = join(SESSIONS_DIR, `${name}.provider.json`);
   if (existsSync(providerFile)) unlinkSync(providerFile);
+  
+  // Emit session:destroy event
+  await emitSessionDestroy(name, history, reason);
+}
+
+// Get conversation history for a session
+function getConversationHistory(name: string): any[] {
+  const logPath = getConversationLogPath(name);
+  if (!existsSync(logPath)) return [];
+  
+  try {
+    const content = readFileSync(logPath, "utf-8");
+    return content
+      .split("\n")
+      .filter(line => line.trim())
+      .map(line => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 export function listSessions(): Session[] {
@@ -273,6 +309,18 @@ async function executeInject(
       messageImages = messageImages.concat(message.images);
     }
   }
+
+  // Emit session:create event for new sessions
+  if (!existingSessionId) {
+    await emitSessionCreate(name, { context, provider: getSessionProvider(name) });
+  }
+
+  // Emit beforeInject event (plugins can modify behavior here)
+  await emitSessionBeforeInject(name, messageText, from, channel ? { 
+    type: channel.type, 
+    id: channel.id, 
+    name: channel.name 
+  } : undefined);
 
   if (!silent) {
     logger.info(`[wopr] Injecting into session: ${name}`);
@@ -433,6 +481,8 @@ async function executeInject(
             const streamMsg: StreamMessage = { type: "text", content: block.text };
             if (onStream) onStream(streamMsg);
             emitStream(name, from, streamMsg);
+            // Emit new event bus event for response chunks
+            await emitSessionResponseChunk(name, messageText, collected.join(""), from, block.text);
           } else if (block.type === "tool_use") {
             if (!silent) logger.info(`[tool] ${block.name}`);
             const streamMsg: StreamMessage = { type: "tool_use", content: "", toolName: block.name };
@@ -493,6 +543,9 @@ async function executeInject(
 
   // Emit final injection event for plugins that want complete responses
   emitInjection(name, from, messageText, response);
+
+  // Emit new event bus event for afterInject
+  await emitSessionAfterInject(name, messageText, response, from);
 
   // Update last trigger timestamp for progressive context
   // This marks the end of this interaction, so next trigger gets context since now

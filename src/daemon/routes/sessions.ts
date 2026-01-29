@@ -98,9 +98,9 @@ sessionsRouter.put("/:name", async (c) => {
 });
 
 // Delete session
-sessionsRouter.delete("/:name", (c) => {
+sessionsRouter.delete("/:name", async (c) => {
   const name = c.req.param("name");
-  deleteSession(name);
+  await deleteSession(name, "api_delete");
   return c.json({ deleted: true });
 });
 
