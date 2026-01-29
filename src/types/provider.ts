@@ -55,6 +55,37 @@ export interface ProviderCredentials {
 }
 
 /**
+ * Tool definition for AI function calling
+ */
+export interface Tool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties?: Record<string, any>;
+    required?: string[];
+  };
+}
+
+/**
+ * Tool call from AI
+ */
+export interface ToolCall {
+  id: string;
+  name: string;
+  input: Record<string, any>;
+}
+
+/**
+ * Tool result to return to AI
+ */
+export interface ToolResult {
+  tool_use_id: string;
+  content: string;
+  is_error?: boolean;
+}
+
+/**
  * Request options for model queries
  * Normalized across all providers
  */
@@ -82,6 +113,9 @@ export interface ModelQueryOptions {
 
   /** Image URLs for vision models */
   images?: string[];
+
+  /** Tools for AI function calling (A2A, etc.) */
+  tools?: Tool[];
 
   /** Provider-specific options */
   providerOptions?: Record<string, unknown>;

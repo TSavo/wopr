@@ -35,6 +35,11 @@ export interface WoprConfig {
     // Plugin-specific config stored here: plugins.data[pluginName]
     data?: Record<string, any>;
   };
+  agents?: {
+    a2a?: {
+      enabled: boolean;
+    };
+  };
 }
 
 const DEFAULT_CONFIG: WoprConfig = {

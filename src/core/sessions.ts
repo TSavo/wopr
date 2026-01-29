@@ -23,6 +23,8 @@ import {
   type MessageInfo,
   type AssembledContext 
 } from "./context.js";
+import type { Tool, ToolCall, ToolResult } from "../types/provider.js";
+import { config as centralConfig } from "./config.js";
 import { 
   emitSessionBeforeInject,
   emitSessionAfterInject,
@@ -34,6 +36,189 @@ import {
 // Initialize context system with defaults (async)
 const contextInitPromise = initContextSystem();
 // Don't block - let it initialize in background
+
+// ============================================================================
+// A2A (Agent-to-Agent) Tool Definitions
+// ============================================================================
+
+const A2A_TOOLS: Tool[] = [
+  {
+    name: "sessions_list",
+    description: "List all active WOPR sessions with metadata. Use this to discover other sessions/agents you can communicate with.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: { 
+          type: "number", 
+          description: "Maximum number of sessions to return (default: 50)"
+        }
+      }
+    }
+  },
+  {
+    name: "sessions_send",
+    description: "Send a message to another WOPR session. Use this to delegate tasks, ask questions, or coordinate with other sessions. The target session will process your message and may respond.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session: { 
+          type: "string", 
+          description: "Target session name (e.g., 'code-reviewer', 'discord-123456')"
+        },
+        message: { 
+          type: "string", 
+          description: "The message to send to the target session"
+        }
+      },
+      required: ["session", "message"]
+    }
+  },
+  {
+    name: "sessions_history",
+    description: "Fetch conversation history from another session. Use this to get context before sending a message, or to review what was discussed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        session: { 
+          type: "string", 
+          description: "Session name to fetch history from"
+        },
+        limit: { 
+          type: "number", 
+          description: "Number of recent messages to fetch (default: 10, max: 50)"
+        }
+      },
+      required: ["session"]
+    }
+  },
+  {
+    name: "sessions_spawn",
+    description: "Create a new session with a specific purpose. Use this when you need a specialist agent for a task (e.g., 'Create a code reviewer session for Python'). The new session will be initialized with your description.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { 
+          type: "string", 
+          description: "Name for the new session (e.g., 'python-reviewer')"
+        },
+        purpose: { 
+          type: "string", 
+          description: "Describe what this session should do (becomes its system context)"
+        }
+      },
+      required: ["name", "purpose"]
+    }
+  }
+];
+
+/**
+ * Check if A2A (Agent-to-Agent) tools are enabled
+ */
+function isA2AEnabled(): boolean {
+  try {
+    const cfg = centralConfig.get();
+    return cfg.agents?.a2a?.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get A2A tools if enabled
+ */
+function getA2ATools(): Tool[] | undefined {
+  return isA2AEnabled() ? A2A_TOOLS : undefined;
+}
+
+/**
+ * Execute an A2A tool call
+ */
+async function executeA2ATool(toolCall: ToolCall, fromSession: string): Promise<ToolResult> {
+  try {
+    switch (toolCall.name) {
+      case "sessions_list": {
+        const sessions = getSessions();
+        const sessionList = Object.keys(sessions).map(key => ({
+          name: key,
+          id: sessions[key]
+        }));
+        return {
+          tool_use_id: toolCall.id,
+          content: JSON.stringify({ sessions: sessionList, count: sessionList.length }, null, 2)
+        };
+      }
+      
+      case "sessions_send": {
+        const { session, message } = toolCall.input;
+        if (!session || !message) {
+          return {
+            tool_use_id: toolCall.id,
+            content: "Error: Missing required parameters 'session' or 'message'",
+            is_error: true
+          };
+        }
+        // Inject into target session
+        const response = await inject(session, message, { 
+          from: fromSession,
+          silent: true 
+        });
+        return {
+          tool_use_id: toolCall.id,
+          content: `Response from ${session}:\n${response.response}`
+        };
+      }
+      
+      case "sessions_history": {
+        const { session, limit = 10 } = toolCall.input;
+        if (!session) {
+          return {
+            tool_use_id: toolCall.id,
+            content: "Error: Missing required parameter 'session'",
+            is_error: true
+          };
+        }
+        const entries = readConversationLog(session, Math.min(limit, 50));
+        const formatted = entries.map(e => 
+          `[${new Date(e.ts).toISOString()}] ${e.from}: ${e.content?.substring(0, 200)}${e.content?.length > 200 ? '...' : ''}`
+        ).join('\n');
+        return {
+          tool_use_id: toolCall.id,
+          content: formatted || "No history found for this session."
+        };
+      }
+      
+      case "sessions_spawn": {
+        const { name, purpose } = toolCall.input;
+        if (!name || !purpose) {
+          return {
+            tool_use_id: toolCall.id,
+            content: "Error: Missing required parameters 'name' or 'purpose'",
+            is_error: true
+          };
+        }
+        // Create new session with purpose as context
+        setSessionContext(name, purpose);
+        return {
+          tool_use_id: toolCall.id,
+          content: `Session '${name}' created successfully with purpose: ${purpose}`
+        };
+      }
+      
+      default:
+        return {
+          tool_use_id: toolCall.id,
+          content: `Error: Unknown tool '${toolCall.name}'`,
+          is_error: true
+        };
+    }
+  } catch (error) {
+    return {
+      tool_use_id: toolCall.id,
+      content: `Error executing ${toolCall.name}: ${error instanceof Error ? error.message : String(error)}`,
+      is_error: true
+    };
+  }
+}
 
 // Ensure directories exist
 if (!existsSync(SESSIONS_DIR)) {
@@ -431,6 +616,9 @@ async function executeInject(
   }
 
   // Execute query using resolved provider or fallback to direct query
+  // Get A2A tools if enabled
+  const a2aTools = getA2ATools();
+  
   let q: any;
   if (resolvedProvider) {
     // Use provider registry to execute query
@@ -440,18 +628,24 @@ async function executeInject(
       resume: existingSessionId,
       model: resolvedProvider.provider.defaultModel,
       images: messageImages.length > 0 ? messageImages : undefined,
+      tools: a2aTools,
     });
   } else {
     // Fallback: use hardcoded Anthropic query
     // Note: fallback path doesn't support images (use provider plugins for full features)
+    const fallbackOptions: any = {
+      resume: existingSessionId,
+      systemPrompt: fullContext,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    };
+    // Add tools if A2A is enabled (Agent SDK supports tools in options)
+    if (a2aTools) {
+      fallbackOptions.tools = a2aTools;
+    }
     q = query({
       prompt: fullMessage,
-      options: {
-        resume: existingSessionId,
-        systemPrompt: fullContext,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-      }
+      options: fallbackOptions,
     });
   }
 
@@ -488,6 +682,19 @@ async function executeInject(
             const streamMsg: StreamMessage = { type: "tool_use", content: "", toolName: block.name };
             if (onStream) onStream(streamMsg);
             emitStream(name, from, streamMsg);
+            
+            // Execute A2A tool and collect result
+            if (isA2AEnabled()) {
+              const toolCall: ToolCall = {
+                id: block.id,
+                name: block.name,
+                input: block.input || {}
+              };
+              logger.info(`[a2a] Executing ${block.name} from session ${name}`);
+              const result = await executeA2ATool(toolCall, name);
+              // Add tool result to collected for context
+              collected.push(`\n[Tool ${block.name} result]: ${result.content.substring(0, 500)}${result.content.length > 500 ? '...' : ''}\n`);
+            }
           }
         }
         break;
