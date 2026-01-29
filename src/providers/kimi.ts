@@ -103,8 +103,12 @@ class KimiClient implements ModelClient {
     const agent = await this.getAgent();
 
     try {
-      // Create a session
-      const session = await agent.createSession();
+      // Create a session (pass sessionId to resume if provided)
+      const sessionOptions: any = {};
+      if (opts.resume) {
+        sessionOptions.sessionId = opts.resume;
+      }
+      const session = await agent.createSession(sessionOptions);
 
       // Prepare prompt - include image URLs in text
       let prompt = opts.prompt;
