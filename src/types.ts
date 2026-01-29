@@ -56,6 +56,23 @@ export interface Identity {
   rotatedAt?: number;
 }
 
+// Agent persona identity (from IDENTITY.md)
+export interface AgentIdentity {
+  name?: string;          // Agent name (e.g., "WOPR")
+  creature?: string;      // What the agent is (e.g., "AI Assistant")
+  vibe?: string;          // Personality description
+  emoji?: string;         // Preferred emoji for reactions
+}
+
+// User profile (from USER.md)
+export interface UserProfile {
+  name?: string;
+  preferredAddress?: string;
+  pronouns?: string;
+  timezone?: string;
+  notes?: string;
+}
+
 // Key rotation types
 export interface KeyRotation {
   v: 1;
@@ -400,6 +417,12 @@ export interface WOPRPluginContext {
 
   // Identity (read-only)
   getIdentity(): { publicKey: string; shortId: string; encryptPub: string };
+
+  // Agent persona identity (from IDENTITY.md workspace file)
+  getAgentIdentity(): AgentIdentity | Promise<AgentIdentity>;
+
+  // User profile (from USER.md workspace file)
+  getUserProfile(): UserProfile | Promise<UserProfile>;
 
   // Sessions
   getSessions(): string[];

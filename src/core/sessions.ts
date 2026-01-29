@@ -24,8 +24,9 @@ import {
   type AssembledContext 
 } from "./context.js";
 
-// Initialize context system with defaults
-initContextSystem();
+// Initialize context system with defaults (async)
+const contextInitPromise = initContextSystem();
+// Don't block - let it initialize in background
 
 // Ensure directories exist
 if (!existsSync(SESSIONS_DIR)) {

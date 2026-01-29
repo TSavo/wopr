@@ -22,6 +22,13 @@ import { join } from "path";
 import { SESSIONS_DIR } from "../paths.js";
 import { getChannel, getChannelsForSession } from "../plugins.js";
 import { discoverSkills, formatSkillsXml } from "./skills.js";
+import { 
+  loadBootstrapFiles, 
+  formatBootstrapContext, 
+  applySoulEvilOverride,
+  resolveWorkspaceDir,
+  type SoulEvilConfig
+} from "./workspace.js";
 
 // ============================================================================
 // Types
@@ -150,6 +157,50 @@ const skillsProvider: ContextProvider = {
       role: "system",
       metadata: { source: "skills", priority: 10, skillCount: skills.length }
     };
+  }
+};
+
+/**
+ * Bootstrap files from workspace (AGENTS.md, SOUL.md, etc.)
+ * Provides agent identity, persona, and user profile
+ */
+const bootstrapFilesProvider: ContextProvider = {
+  name: "bootstrap_files",
+  priority: 5, // Higher priority than skills (lower number = earlier/higher priority)
+  enabled: true,
+  async getContext(): Promise<ContextPart | null> {
+    try {
+      // Load bootstrap files
+      let files = await loadBootstrapFiles();
+      
+      // Apply SOUL_EVIL override if configured
+      // TODO: Get SoulEvilConfig from app config when available
+      const soulEvilConfig: SoulEvilConfig | undefined = undefined;
+      files = await applySoulEvilOverride(files, undefined, soulEvilConfig);
+      
+      // Filter out missing and empty files
+      const validFiles = files.filter(f => !f.missing && f.content?.trim());
+      
+      if (validFiles.length === 0) {
+        return null;
+      }
+      
+      const context = formatBootstrapContext(files);
+      
+      return {
+        content: context,
+        role: "system",
+        metadata: { 
+          source: "bootstrap_files", 
+          priority: 5, 
+          fileCount: validFiles.length,
+          files: validFiles.map(f => f.name)
+        }
+      };
+    } catch (err) {
+      logger.error(`[context] Failed to load bootstrap files:`, err);
+      return null;
+    }
   }
 };
 
@@ -375,10 +426,13 @@ ${content}
 // Initialization
 // ============================================================================
 
-export function initContextSystem(): void {
+export async function initContextSystem(): Promise<void> {
   // Register default providers (only if not already registered)
   if (!contextProviders.has("session_system")) {
     registerContextProvider(sessionSystemProvider);
+  }
+  if (!contextProviders.has("bootstrap_files")) {
+    registerContextProvider(bootstrapFilesProvider);
   }
   if (!contextProviders.has("skills")) {
     registerContextProvider(skillsProvider);
@@ -399,6 +453,19 @@ export function initContextSystem(): void {
   }).catch(() => {
     // Self-doc provider is optional
   });
+
+  // Ensure workspace exists with bootstrap files
+  try {
+    const { ensureWorkspace } = await import("./workspace.js");
+    const { dir, created } = await ensureWorkspace();
+    if (created) {
+      logger.info(`[context] Created new workspace at ${dir}`);
+    } else {
+      logger.debug(`[context] Using existing workspace at ${dir}`);
+    }
+  } catch (err) {
+    logger.warn(`[context] Failed to ensure workspace: ${err}`);
+  }
   
   logger.info("[context] Context system initialized with defaults");
 }

@@ -40,6 +40,7 @@ import type {
   ContextPart, 
   MessageInfo 
 } from "./core/context.js";
+import { resolveIdentity, resolveUserProfile } from "./core/workspace.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
 const PLUGINS_DIR = join(WOPR_HOME, "plugins");
@@ -396,6 +397,16 @@ function createPluginContext(
 
     getProvider(id: string): ModelProvider | undefined {
       return providerPlugins.get(id) || providerRegistry.listProviders().find(p => p.id === id) as unknown as ModelProvider;
+    },
+
+    async getAgentIdentity() {
+      // Resolve from workspace IDENTITY.md
+      return await resolveIdentity();
+    },
+
+    async getUserProfile() {
+      // Resolve from workspace USER.md
+      return await resolveUserProfile();
     },
 
     registerConfigSchema(pluginId: string, schema: ConfigSchema) {
