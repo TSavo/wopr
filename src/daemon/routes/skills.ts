@@ -22,8 +22,8 @@ export const skillsRouter = new Hono();
 
 // List installed skills
 skillsRouter.get("/", (c) => {
-  const skills = discoverSkills();
-  return c.json({ skills });
+  const { skills, warnings } = discoverSkills();
+  return c.json({ skills, warnings: warnings.length > 0 ? warnings : undefined });
 });
 
 // Create a new skill

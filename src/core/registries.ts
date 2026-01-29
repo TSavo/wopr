@@ -143,11 +143,16 @@ async function fetchGitHubSkills(
 
       if (existsSync(skillMd)) {
         const content = readFileSync(skillMd, "utf-8");
-        const meta = parseSkillFrontmatter(content);
+        const { frontmatter, warnings } = parseSkillFrontmatter(content);
+        if (warnings.length > 0) {
+          for (const w of warnings) {
+            console.warn(`[registries] ${w.skillPath}: ${w.message}`);
+          }
+        }
         if (!q || entry.name.toLowerCase().includes(q) || content.toLowerCase().includes(q)) {
           skills.push({
             name: entry.name,
-            description: meta.description || "",
+            description: frontmatter.description || "",
             source: `github:${owner}/${repo}/${subdir.replace(cacheDir + "/", "")}`,
           });
         }

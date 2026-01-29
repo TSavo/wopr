@@ -136,7 +136,12 @@ const skillsProvider: ContextProvider = {
   priority: 10,
   enabled: true,
   async getContext(): Promise<ContextPart | null> {
-    const skills = discoverSkills();
+    const { skills, warnings } = discoverSkills();
+    if (warnings.length > 0) {
+      for (const w of warnings) {
+        logger.warn(`[skills] ${w.skillPath}: ${w.message}`);
+      }
+    }
     if (skills.length === 0) return null;
     
     const skillsXml = formatSkillsXml(skills);
