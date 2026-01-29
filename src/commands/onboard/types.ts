@@ -59,11 +59,12 @@ export type OnboardStep = (
   ctx: OnboardContext
 ) => Promise<Partial<OnboardConfig> | void>;
 
-// Available model providers
+// Available model providers (all via plugins)
 export const AVAILABLE_PROVIDERS = [
-  { id: "kimi", name: "Kimi (Moonshot AI)", models: ["kimi-k2", "kimi-k1.5"] },
-  { id: "anthropic", name: "Anthropic (Claude)", models: ["claude-sonnet-4", "claude-opus-4"] },
-  { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini"] },
+  { id: "kimi", name: "Kimi (Moonshot AI)", models: ["kimi-k2", "kimi-k1.5"], npm: "wopr-plugin-provider-kimi" },
+  { id: "anthropic", name: "Anthropic (Claude)", models: ["claude-sonnet-4", "claude-opus-4"], npm: "wopr-plugin-provider-anthropic" },
+  { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini"], npm: "wopr-plugin-provider-openai" },
+  { id: "opencode", name: "OpenCode (Windsurf)", models: ["claude-3.5-sonnet", "gpt-4o"], npm: "wopr-plugin-provider-opencode" },
 ] as const;
 
 // Available channel plugins
@@ -75,7 +76,7 @@ export const AVAILABLE_CHANNELS = [
   { id: "signal", name: "Signal", description: "Signal messaging via signal-cli", npm: "wopr-plugin-signal" },
   { id: "msteams", name: "Microsoft Teams", description: "MS Teams via Azure Bot Framework", npm: "wopr-plugin-msteams" },
   { id: "imessage", name: "iMessage (macOS)", description: "iMessage/SMS via imsg CLI (macOS only)", npm: "wopr-plugin-imessage" },
-  { id: "p2p", name: "P2P Network", description: "Peer-to-peer messaging (built-in)", npm: null },
+  { id: "p2p", name: "P2P Network", description: "Peer-to-peer messaging via Hyperswarm", npm: "wopr-plugin-p2p" },
 ] as const;
 
 // Available skills (from our skills system)

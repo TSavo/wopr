@@ -15,7 +15,6 @@ import {
   StreamHandler,
   SessionStreamEvent,
   StreamMessage,
-  Peer,
   StreamCallback,
   ChannelAdapter,
   ChannelRef,
@@ -74,6 +73,56 @@ const providerPlugins: Map<string, ModelProvider> = new Map();
 
 // Config schemas registry (pluginId -> schema)
 const configSchemas: Map<string, ConfigSchema> = new Map();
+
+// Plugin extensions registry - plugins can expose APIs to other plugins
+// Key format: "pluginName.extensionName" -> extension object
+const pluginExtensions: Map<string, unknown> = new Map();
+
+/**
+ * Register a plugin extension that other plugins can access
+ * @param pluginName - Name of the plugin registering the extension
+ * @param extensionName - Name of the extension (e.g., "p2p", "discord")
+ * @param extension - The extension object with methods/properties
+ */
+export function registerPluginExtension(pluginName: string, extensionName: string, extension: unknown): void {
+  const key = `${pluginName}.${extensionName}`;
+  pluginExtensions.set(key, extension);
+  logger.info(`[plugins] Extension registered: ${key}`);
+}
+
+/**
+ * Unregister a plugin extension
+ */
+export function unregisterPluginExtension(pluginName: string, extensionName: string): void {
+  const key = `${pluginName}.${extensionName}`;
+  pluginExtensions.delete(key);
+  logger.info(`[plugins] Extension unregistered: ${key}`);
+}
+
+/**
+ * Get a plugin extension by name
+ * @param extensionName - Full name (plugin.extension) or just extension name
+ */
+export function getPluginExtension<T = unknown>(extensionName: string): T | undefined {
+  // Try exact match first
+  if (pluginExtensions.has(extensionName)) {
+    return pluginExtensions.get(extensionName) as T;
+  }
+  // Try to find by extension name suffix
+  for (const [key, ext] of pluginExtensions) {
+    if (key.endsWith(`.${extensionName}`)) {
+      return ext as T;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * List all registered extensions
+ */
+export function listPluginExtensions(): string[] {
+  return Array.from(pluginExtensions.keys());
+}
 
 function channelKey(channel: ChannelRef): string {
   return `${channel.type}:${channel.id}`;
@@ -271,10 +320,7 @@ function createPluginContext(
   plugin: InstalledPlugin,
   injectors: {
     inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
-    injectPeer: (peer: string, session: string, message: string) => Promise<string>;
-    getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
     getSessions: () => string[];
-    getPeers: () => Peer[];
   }
 ): WOPRPluginContext {
   const pluginName = plugin.name;
@@ -284,10 +330,7 @@ function createPluginContext(
       injectors.inject(session, message, options),
     logMessage: (session: string, message: string, options?: { from?: string; channel?: ChannelRef }) =>
       logMessageToSession(session, message, options),
-    injectPeer: injectors.injectPeer,
-    getIdentity: injectors.getIdentity,
     getSessions: injectors.getSessions,
-    getPeers: injectors.getPeers,
 
     on(event: "injection" | "stream", handler: InjectionHandler | StreamHandler) {
       pluginEvents.on(event, handler);
@@ -436,6 +479,23 @@ function createPluginContext(
       return configSchemas.get(pluginId);
     },
 
+    // Plugin extensions - allow plugins to expose APIs to other plugins
+    registerExtension(name: string, extension: unknown) {
+      registerPluginExtension(pluginName, name, extension);
+    },
+
+    unregisterExtension(name: string) {
+      unregisterPluginExtension(pluginName, name);
+    },
+
+    getExtension<T = unknown>(name: string): T | undefined {
+      return getPluginExtension<T>(name);
+    },
+
+    listExtensions(): string[] {
+      return listPluginExtensions();
+    },
+
     log: createPluginLogger(plugin.name),
 
     getPluginDir(): string {
@@ -561,10 +621,7 @@ export async function loadPlugin(
   installed: InstalledPlugin,
   injectors: {
     inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
-    injectPeer: (peer: string, session: string, message: string) => Promise<string>;
-    getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
     getSessions: () => string[];
-    getPeers: () => Peer[];
   }
 ): Promise<WOPRPlugin> {
   // Find the entry point
@@ -811,10 +868,7 @@ function createPluginLogger(pluginName: string): PluginLogger {
 
 export async function loadAllPlugins(injectors: {
   inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
-  injectPeer: (peer: string, session: string, message: string) => Promise<string>;
-  getIdentity: () => { publicKey: string; shortId: string; encryptPub: string };
   getSessions: () => string[];
-  getPeers: () => Peer[];
 }): Promise<void> {
   logger.info(`[plugins] loadAllPlugins starting...`);
   logger.info(`[plugins] WOPR_HOME: ${process.env.WOPR_HOME || "not set"}`);

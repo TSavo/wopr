@@ -3,6 +3,7 @@
  */
 import { select, text, password, note, spinner, confirm, pc } from "../prompts.js";
 import { AVAILABLE_PROVIDERS } from "../types.js";
+import { installPlugin } from "../../../plugins.js";
 import type { OnboardContext, OnboardStep } from "../types.js";
 
 export const providersStep: OnboardStep = async (ctx: OnboardContext) => {
@@ -55,9 +56,28 @@ export const providersStep: OnboardStep = async (ctx: OnboardContext) => {
     
     providerId = selected;
   }
-  
+
   const providerInfo = AVAILABLE_PROVIDERS.find(p => p.id === providerId)!;
-  
+
+  // Install provider plugin if needed
+  if (providerInfo.npm) {
+    const s = await spinner();
+    s.start(`Installing ${providerInfo.name} provider plugin...`);
+    try {
+      await installPlugin(providerInfo.npm);
+      s.stop(`${providerInfo.name} provider installed!`);
+    } catch (err: any) {
+      s.stop(`Provider plugin install failed: ${err.message}`);
+      const continueAnyway = await confirm({
+        message: "Continue without provider plugin? (You can install later)",
+        initialValue: false,
+      });
+      if (!continueAnyway) {
+        return {};
+      }
+    }
+  }
+
   // Get API key
   let apiKey: string;
   

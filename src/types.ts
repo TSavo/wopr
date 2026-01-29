@@ -623,12 +623,6 @@ export interface WOPRPluginContext {
   // Useful for capturing context from messages not directed at the bot
   logMessage(session: string, message: string, options?: { from?: string; channel?: ChannelRef }): void;
 
-  // Inject to peer's session, get response
-  injectPeer(peer: string, session: string, message: string): Promise<string>;
-
-  // Identity (read-only)
-  getIdentity(): { publicKey: string; shortId: string; encryptPub: string };
-
   // Agent persona identity (from IDENTITY.md workspace file)
   getAgentIdentity(): AgentIdentity | Promise<AgentIdentity>;
 
@@ -637,9 +631,6 @@ export interface WOPRPluginContext {
 
   // Sessions
   getSessions(): string[];
-
-  // Peers
-  getPeers(): Peer[];
 
   // Events - when sessions receive injections (deprecated, use events API)
   on(event: "injection", handler: InjectionHandler): void;
@@ -728,6 +719,14 @@ export interface WOPRPluginContext {
   registerConfigSchema(pluginId: string, schema: ConfigSchema): void;
   unregisterConfigSchema(pluginId: string): void;
   getConfigSchema(pluginId: string): ConfigSchema | undefined;
+
+  // Plugin extensions - plugins can expose APIs to other plugins
+  // Example: P2P plugin registers ctx.registerExtension("p2p", { injectPeer, getIdentity, getPeers })
+  // Other plugins access via ctx.getExtension<P2PExtension>("p2p")
+  registerExtension(name: string, extension: unknown): void;
+  unregisterExtension(name: string): void;
+  getExtension<T = unknown>(name: string): T | undefined;
+  listExtensions(): string[];
 
   // Logging
   log: PluginLogger;
