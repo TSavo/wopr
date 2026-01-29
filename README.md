@@ -58,11 +58,32 @@ wopr inject MCoxK8f2:mybot "Hello!"
 
 ## Documentation
 
+### Getting Started
+- [Quick Start](#quick-start) - Get up and running in minutes
+- [Onboarding Wizard](#plugins) - Interactive setup with `wopr onboard`
+- [Examples](examples/) - Example plugins and patterns
+
+### Core Documentation
 - [Architecture](docs/ARCHITECTURE.md) - System design and protocols
-- [Plugins](docs/PLUGINS.md) - Plugin development and official plugins
+- [API Reference](docs/API.md) - HTTP API documentation
+- [Configuration](docs/CONFIGURATION.md) - Complete config reference
 - [Events](docs/events.md) - Event bus and reactive programming
-- [Threat Model](docs/THREAT_MODEL.md) - Security analysis
+
+### Plugin Development
+- [Plugins Guide](docs/PLUGINS.md) - Plugin development and official plugins
+- [Plugin Examples](examples/plugins/) - Working example plugins
+
+### Operations
+- [Docker Usage](docs/DOCKER.md) - Container deployment
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
+- [Security](docs/THREAT_MODEL.md) - Threat model and security analysis
+
+### Protocol
 - [Discovery](docs/DISCOVERY.md) - P2P discovery protocol
+- [Protocol Spec](docs/PROTOCOL.md) - Communication protocol details
+
+### Project
+- [Changelog](CHANGELOG.md) - Version history and changes
 
 ## Core Concepts
 
@@ -303,6 +324,25 @@ wopr plugin list
 - [wopr-plugin-provider-anthropic](https://github.com/TSavo/wopr-plugin-provider-anthropic) - Anthropic Claude
 
 See [Plugins documentation](docs/PLUGINS.md) for development guide.
+
+## Examples
+
+Example plugins demonstrating WOPR capabilities:
+
+```bash
+# Copy example plugins
+cp -r examples/plugins/* ~/.wopr/plugins/
+
+# Enable and try them
+wopr plugin enable event-monitor
+wopr plugin enable session-analytics
+```
+
+**Available Examples:**
+- `event-monitor.ts` - Complete event bus demonstration
+- `session-analytics.ts` - Reactive state building with metrics
+
+See [examples/README.md](examples/) for more.
 
 ## Event Bus
 
