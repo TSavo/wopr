@@ -169,7 +169,7 @@ const conversationHistoryProvider: ContextProvider = {
         .filter(e => e.ts > lastTrigger)
         .filter(e => e.from !== "system") // Exclude system/context messages
         .filter(e => !e.content?.startsWith("Conversation since")) // Exclude context markers
-        .slice(-3); // Max 3 entries to keep context under 2MB limit
+        .slice(-20); // Max 20 entries to keep context under 2MB limit
       
       if (entries.length === 0) return null;
       
