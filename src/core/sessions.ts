@@ -113,13 +113,15 @@ const A2A_TOOLS: Tool[] = [
 
 /**
  * Check if A2A (Agent-to-Agent) tools are enabled
+ * A2A is enabled by default, can be disabled via config
  */
 function isA2AEnabled(): boolean {
   try {
     const cfg = centralConfig.get();
-    return cfg.agents?.a2a?.enabled === true;
+    // A2A enabled by default unless explicitly disabled
+    return cfg.agents?.a2a?.enabled !== false;
   } catch {
-    return false;
+    return true; // Default to enabled
   }
 }
 

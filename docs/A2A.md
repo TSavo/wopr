@@ -10,15 +10,19 @@ A2A enables:
 - **History Inspection** - View conversation context from other sessions
 - **Dynamic Spawning** - Create specialist sessions on demand
 
-## Enabling A2A
+## A2A Configuration
 
-A2A is **opt-in** via configuration. Add to your `~/.wopr/config.json`:
+A2A is **enabled by default**. No configuration needed to start using multi-agent features.
+
+### Disabling A2A
+
+If you want to disable A2A (e.g., for security or to reduce context usage), add to your `~/.wopr/config.json`:
 
 ```json
 {
   "agents": {
     "a2a": {
-      "enabled": true
+      "enabled": false
     }
   }
 }
@@ -27,10 +31,10 @@ A2A is **opt-in** via configuration. Add to your `~/.wopr/config.json`:
 Or via CLI:
 
 ```bash
-wopr config set agents.a2a.enabled true
+wopr config set agents.a2a.enabled false
 ```
 
-Restart the WOPR daemon after enabling:
+Restart the WOPR daemon after changing:
 
 ```bash
 wopr daemon restart
@@ -148,9 +152,9 @@ Discord Session:
 ## Security Considerations
 
 - **Same-instance only** - A2A works within one WOPR instance
-- **All sessions equal** - Any session can message any other (when A2A is enabled)
+- **All sessions equal** - Any session can message any other (A2A is enabled by default)
 - **No sandboxing** - Sessions share the same execution environment
-- **Opt-in** - Disabled by default, must be explicitly enabled
+- **Opt-out** - Enabled by default, can be disabled if needed
 
 ## Provider Support
 
@@ -169,9 +173,9 @@ Currently tested primarily with Anthropic Claude via the Agent SDK.
 ### "Tool not found" errors
 
 Ensure:
-1. A2A is enabled in config: `agents.a2a.enabled: true`
+1. A2A hasn't been disabled: `agents.a2a.enabled` should not be `false`
 2. Using a provider that supports tools (Anthropic recommended)
-3. WOPR daemon was restarted after enabling
+3. WOPR daemon is running
 
 ### Tools don't appear in AI responses
 
