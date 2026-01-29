@@ -18,11 +18,8 @@ import { config as centralConfig } from "../core/config.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { cronsRouter } from "./routes/crons.js";
 import { authRouter } from "./routes/auth.js";
-import { peersRouter } from "./routes/peers.js";
 import { pluginsRouter } from "./routes/plugins.js";
 import { skillsRouter } from "./routes/skills.js";
-import { identityRouter } from "./routes/identity.js";
-import { discoverRouter } from "./routes/discover.js";
 import { configRouter } from "./routes/config.js";
 import { middlewareRouter } from "./routes/middleware.js";
 import { providersRouter } from "./routes/providers.js";
@@ -31,15 +28,8 @@ import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast
 // Core imports for daemon functionality
 import { getCrons, saveCrons, shouldRunCron } from "../core/cron.js";
 import { inject } from "../core/sessions.js";
-import { sendP2PChannelMessage, startP2PChannel } from "../channels/p2p-channel.js";
-import {
-  initDiscovery, joinTopic, updateProfile, shutdownDiscovery
-} from "../discovery.js";
-import { getIdentity } from "../identity.js";
 import { loadAllPlugins, shutdownAllPlugins } from "../plugins.js";
-import { getPeers } from "../trust.js";
-import { shortKey } from "../identity.js";
-import type { StreamCallback, Peer } from "../types.js";
+import type { StreamCallback } from "../types.js";
 
 // Provider registry imports
 import { providerRegistry } from "../core/providers.js";
@@ -73,11 +63,8 @@ export function createApp() {
   app.route("/config", configRouter);
   app.route("/sessions", sessionsRouter);
   app.route("/crons", cronsRouter);
-  app.route("/peers", peersRouter);
   app.route("/plugins", pluginsRouter);
   app.route("/skills", skillsRouter);
-  app.route("/identity", identityRouter);
-  app.route("/discover", discoverRouter);
   app.route("/middleware", middlewareRouter);
   app.route("/providers", providersRouter);
 
@@ -133,26 +120,15 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   );
 
   // Create injectors for plugins
-  const identity = getIdentity();
   const injectors = {
     inject: async (session: string, message: string, options?: import("../types.js").PluginInjectOptions): Promise<string> => {
       const result = await inject(session, message, { silent: true, ...options });
       return result.response;
     },
-    injectPeer: async (peer: string, session: string, message: string): Promise<string> => {
-      const result = await sendP2PChannelMessage(peer, session, message);
-      return result.message || "";
-    },
-    getIdentity: () => identity ? {
-      publicKey: identity.publicKey,
-      shortId: shortKey(identity.publicKey),
-      encryptPub: identity.encryptPub,
-    } : { publicKey: "", shortId: "", encryptPub: "" },
     getSessions: () => {
       const { getSessions } = require("../core/sessions.js");
       return Object.keys(getSessions());
     },
-    getPeers: (): Peer[] => getPeers(),
   };
 
   // Load plugins (this is where providers register themselves)
@@ -215,52 +191,10 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   setInterval(cronTick, 30000);
   cronTick();
 
-  // Start P2P listener
-  const swarm = startP2PChannel(
-    async (session, message, peerKey, channel) => {
-      await inject(session, message, { silent: true, from: peerKey || "p2p", channel });
-    },
-    daemonLog
-  );
-
-  // Discovery mode - join topics from env var WOPR_TOPICS
-  const topicsEnv = process.env.WOPR_TOPICS;
-  if (topicsEnv) {
-    const topics = topicsEnv.split(",").map(t => t.trim()).filter(t => t);
-    if (topics.length > 0) {
-      daemonLog(`Discovery: joining ${topics.length} topic(s)`);
-
-      const connectionHandler = async (peerProfile: any, topic: string) => {
-        daemonLog(`Connection request from ${peerProfile.id} in ${topic}`);
-        return {
-          accept: true,
-          sessions: ["*"],
-          reason: `Discovered in ${topic}`,
-        };
-      };
-
-      await initDiscovery(connectionHandler, daemonLog);
-
-      if (identity) {
-        updateProfile({
-          type: "wopr-daemon",
-          ready: true,
-        });
-      }
-
-      for (const topic of topics) {
-        await joinTopic(topic);
-        daemonLog(`Joined topic: ${topic}`);
-      }
-    }
-  }
-
   // Shutdown handler
   const shutdown = async () => {
     daemonLog("Daemon stopping...");
     await shutdownAllPlugins();
-    await shutdownDiscovery();
-    if (swarm) await swarm.destroy();
     if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
     daemonLog("Daemon stopped");
     process.exit(0);

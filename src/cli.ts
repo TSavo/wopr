@@ -15,7 +15,6 @@ import { join } from "path";
 import { WOPR_HOME, SESSIONS_DIR, SKILLS_DIR, LOG_FILE, PID_FILE } from "./paths.js";
 import { WoprClient } from "./client.js";
 import { parseTimeSpec } from "./core/cron.js";
-import { shortKey } from "./identity.js";
 import { config } from "./core/config.js";
 import { EXIT_OK, EXIT_INVALID } from "./types.js";
 import {
@@ -107,31 +106,6 @@ Usage:
   wopr auth api-key <key>                    Use API key instead
   wopr auth logout                           Clear credentials
 
-  wopr id                                    Show your WOPR ID
-  wopr id init [--force]                     Generate identity keypair
-  wopr id rotate [--broadcast]               Rotate keys (notifies peers if --broadcast)
-
-  wopr invite <peer-pubkey> <session>        Create invite for specific peer
-  wopr invite claim <token>                  Claim an invite (P2P handshake)
-
-  wopr p2p friend add <peer-pubkey> [sess]   Create invite and optionally claim theirs
-
-  wopr access                                Who can inject to your sessions
-  wopr revoke <peer>                         Revoke someone's access
-
-  wopr peers                                 Who you can inject to
-  wopr peers name <id> <name>                Give a peer a friendly name
-
-  wopr inject <peer>:<session> <message>     Send to peer (P2P encrypted)
-
-  wopr discover join <topic>                 Join a topic to find peers
-  wopr discover leave <topic>                Leave a topic
-  wopr discover topics                       List topics you're in
-  wopr discover peers [topic]                List discovered peers
-  wopr discover connect <peer-id>            Request connection with peer
-  wopr discover profile                      Show your current profile
-  wopr discover profile set <json>           Set profile content (AI-driven)
-
   wopr plugin list                           List installed plugins
   wopr plugin install <source>               Install (npm pkg, github:u/r, or ./local)
   wopr plugin remove <name>                  Remove a plugin
@@ -170,9 +144,9 @@ Supported Providers:
   anthropic                              Claude models via Agent SDK
   codex                                  OpenAI Codex agent for coding tasks
 
-P2P messages are end-to-end encrypted using X25519 ECDH + AES-256-GCM.
-Tokens are bound to the recipient's public key - they cannot be forwarded.
-Discovery is ephemeral - you see peers only while both are online in the same topic.
+Install plugins for additional functionality:
+  wopr plugin install wopr-plugin-p2p    P2P networking, identity, and peer management
+  wopr plugin install wopr-plugin-discord Discord bot integration
 `);
 }
 
@@ -880,178 +854,6 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     } else {
       help();
     }
-  } else if (command === "id") {
-    await requireDaemon();
-    if (subcommand === "init") {
-      const identity = await client.initIdentity(args.includes("--force"));
-      logger.info(`Identity created: ${shortKey(identity.publicKey)}`);
-      logger.info(`Full: wopr://${identity.publicKey}`);
-    } else if (subcommand === "rotate") {
-      const broadcast = args.includes("--broadcast");
-      const result = await client.rotateIdentity(broadcast);
-      logger.info(`Keys rotated!`);
-      logger.info(`New ID: ${shortKey(result.newIdentity.publicKey)}`);
-      logger.info(`Old ID: ${shortKey(result.oldPublicKey)} (valid for 7 days)`);
-      if (broadcast && result.notified) {
-        logger.info(`\nNotified ${result.notified.length} peer(s)`);
-      } else if (!broadcast) {
-        logger.info("\nRun with --broadcast to notify peers of key change.");
-      }
-    } else if (!subcommand) {
-      const identity = await client.getIdentity();
-      if (!identity) {
-        logger.info("No identity. Run: wopr id init");
-      } else {
-        logger.info(`WOPR ID: ${shortKey(identity.publicKey)}`);
-        logger.info(`Full: wopr://${identity.publicKey}`);
-        logger.info(`Encrypt: ${shortKey(identity.encryptPub)}`);
-        if (identity.rotatedFrom) {
-          logger.info(`Rotated from: ${shortKey(identity.rotatedFrom)}`);
-          logger.info(`Rotated at: ${new Date(identity.rotatedAt).toLocaleString()}`);
-        }
-      }
-    } else {
-      help();
-    }
-  } else if (command === "p2p") {
-    await requireDaemon();
-    if (subcommand === "friend" && args[0] === "add") {
-      const peerPubkey = args[1];
-      if (!peerPubkey) {
-        logger.error("Usage: wopr p2p friend add <peer-pubkey> [session...] [--token <token>]");
-        process.exit(1);
-      }
-
-      let token: string | undefined;
-      const sessions: string[] = [];
-      for (let i = 2; i < args.length; i += 1) {
-        if (args[i] === "--token") {
-          token = args[i + 1];
-          i += 1;
-          continue;
-        }
-        sessions.push(args[i]);
-      }
-
-      const grantSessions = sessions.length > 0 ? sessions : ["*"];
-      const invite = await client.createInvite(peerPubkey, grantSessions);
-
-      logger.info(`Invite created for ${shortKey(peerPubkey)}`);
-      logger.info(invite.token);
-      logger.info(`Sessions: ${grantSessions.join(", ")}`);
-
-      if (token) {
-        logger.info("\nClaiming their invite (peer must be online)...");
-        const result = await client.claimInvite(token);
-        if (result.code === EXIT_OK) {
-          logger.info(`Success! Added peer: ${shortKey(result.peerKey!)}`);
-          logger.info(`Sessions: ${result.sessions?.join(", ")}`);
-        } else {
-          logger.error(`Failed to claim: ${result.message}`);
-          process.exit(result.code);
-        }
-      } else {
-        logger.info("\nTo complete the handshake, rerun with their token:");
-        logger.info("  wopr p2p friend add <peer-pubkey> --token <their-token>");
-      }
-    } else {
-      help();
-    }
-  } else if (command === "invite") {
-    await requireDaemon();
-    if (subcommand === "claim") {
-      if (!args[0]) {
-        logger.error("Usage: wopr invite claim <token>");
-        process.exit(1);
-      }
-      logger.info("Claiming token (peer must be online)...");
-      const result = await client.claimInvite(args[0]);
-      if (result.code === EXIT_OK) {
-        logger.info(`Success! Added peer: ${shortKey(result.peerKey!)}`);
-        logger.info(`Sessions: ${result.sessions?.join(", ")}`);
-      } else {
-        logger.error(`Failed: ${result.message}`);
-        process.exit(result.code);
-      }
-    } else if (subcommand) {
-      const peerPubkey = subcommand;
-      const sessions = args.length > 0 ? args : ["*"];
-      const result = await client.createInvite(peerPubkey, sessions);
-      logger.info(result.token);
-      logger.info(`\nFor peer: ${shortKey(peerPubkey)}`);
-      logger.info(`Sessions: ${sessions.join(", ")}`);
-      logger.info(`\nThey claim with: wopr invite claim <token>`);
-    } else {
-      logger.error("Usage: wopr invite <peer-pubkey> <session>");
-      logger.error("       wopr invite claim <token>");
-      process.exit(1);
-    }
-  } else if (command === "access") {
-    await requireDaemon();
-    const grants = await client.getAccessGrants();
-    const active = grants.filter((g: any) => !g.revoked);
-    if (active.length === 0) {
-      logger.info("No one has access. Create invite: wopr invite <peer-pubkey> <session>");
-    } else {
-      logger.info("Access grants:");
-      for (const g of active) {
-        logger.info(`  ${g.peerName || shortKey(g.peerKey)}`);
-        logger.info(`    Sessions: ${g.sessions.join(", ")}`);
-      }
-    }
-  } else if (command === "revoke") {
-    await requireDaemon();
-    if (!subcommand) {
-      logger.error("Usage: wopr revoke <peer>");
-      process.exit(1);
-    }
-    await client.revokePeer(subcommand);
-    logger.info(`Revoked: ${subcommand}`);
-  } else if (command === "peers") {
-    await requireDaemon();
-    if (subcommand === "name") {
-      if (!args[0] || !args[1]) {
-        logger.error("Usage: wopr peers name <id> <name>");
-        process.exit(1);
-      }
-      await client.namePeer(args[0], args.slice(1).join(" "));
-      logger.info(`Named peer ${args[0]} as "${args.slice(1).join(" ")}"`);
-    } else if (!subcommand) {
-      const peers = await client.getPeers();
-      if (peers.length === 0) {
-        logger.info("No peers. Claim an invite: wopr invite claim <token>");
-      } else {
-        logger.info("Peers:");
-        for (const p of peers) {
-          logger.info(`  ${p.name || p.id}${p.encryptPub ? " (encrypted)" : ""}`);
-          logger.info(`    Sessions: ${p.sessions.join(", ")}`);
-        }
-      }
-    } else {
-      help();
-    }
-  } else if (command === "inject") {
-    await requireDaemon();
-    if (!subcommand || !args.length) {
-      logger.error("Usage: wopr inject <peer>:<session> <message>");
-      process.exit(EXIT_INVALID);
-    }
-
-    if (!subcommand.includes(":")) {
-      logger.error("Invalid target. Use: wopr inject <peer>:<session> <message>");
-      process.exit(EXIT_INVALID);
-    }
-
-    const [peer, session] = subcommand.split(":");
-    const message = args.join(" ");
-    const result = await client.injectPeer(peer, session, message);
-
-    if (result.code === EXIT_OK) {
-      logger.info("Delivered.");
-    } else {
-      logger.error(result.message);
-    }
-    process.exit(result.code);
   } else if (command === "plugin") {
     // Show help if no subcommand, without requiring daemon
     if (!subcommand) {
@@ -1168,111 +970,6 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         default:
           help();
       }
-    }
-  } else if (command === "discover") {
-    await requireDaemon();
-    switch (subcommand) {
-      case "join": {
-        if (!args[0]) {
-          logger.error("Usage: wopr discover join <topic>");
-          process.exit(1);
-        }
-        await client.joinTopic(args[0]);
-        logger.info(`Joined topic: ${args[0]}`);
-        logger.info("Use 'wopr discover peers' to see discovered peers.");
-        break;
-      }
-      case "leave": {
-        if (!args[0]) {
-          logger.error("Usage: wopr discover leave <topic>");
-          process.exit(1);
-        }
-        await client.leaveTopic(args[0]);
-        logger.info(`Left topic: ${args[0]}`);
-        break;
-      }
-      case "topics": {
-        const topics = await client.getTopics();
-        if (topics.length === 0) {
-          logger.info("Not in any topics. Join one: wopr discover join <topic>");
-        } else {
-          logger.info("Active topics:");
-          for (const t of topics) {
-            const peers = await client.getDiscoveredPeers(t);
-            logger.info(`  ${t} (${peers.length} peers)`);
-          }
-        }
-        break;
-      }
-      case "peers": {
-        const topic = args[0];
-        const peers = await client.getDiscoveredPeers(topic);
-        if (peers.length === 0) {
-          logger.info("No peers discovered yet.");
-        } else {
-          logger.info(`Discovered peers${topic ? ` in ${topic}` : ""}:`);
-          for (const p of peers) {
-            logger.info(`  ${p.id} (${shortKey(p.publicKey)})`);
-            if (p.content) {
-              logger.info(`    ${JSON.stringify(p.content)}`);
-            }
-            if (p.topics?.length > 0) {
-              logger.info(`    Topics: ${p.topics.join(", ")}`);
-            }
-          }
-        }
-        break;
-      }
-      case "connect": {
-        if (!args[0]) {
-          logger.error("Usage: wopr discover connect <peer-id>");
-          process.exit(1);
-        }
-        logger.info(`Requesting connection with ${args[0]}...`);
-        const result = await client.requestConnection(args[0]);
-        if (result.code === EXIT_OK) {
-          logger.info("Connected!");
-          if (result.sessions && result.sessions.length > 0) {
-            logger.info(`Sessions: ${result.sessions.join(", ")}`);
-          }
-        } else {
-          logger.error(`Failed: ${result.message}`);
-        }
-        process.exit(result.code);
-      }
-      case "profile": {
-        if (args[0] === "set") {
-          if (!args[1]) {
-            logger.error("Usage: wopr discover profile set <json>");
-            logger.error("Example: wopr discover profile set '{\"name\":\"Alice\",\"about\":\"Coding assistant\"}'");
-            process.exit(1);
-          }
-          try {
-            const content = JSON.parse(args.slice(1).join(" "));
-            const profile = await client.setProfile(content);
-            logger.info("Profile updated:");
-            logger.info(`  ID: ${profile.id}`);
-            logger.info(`  Content: ${JSON.stringify(profile.content)}`);
-          } catch (err: any) {
-            logger.error(`Invalid JSON: ${err.message}`);
-            process.exit(1);
-          }
-        } else {
-          const profile = await client.getProfile();
-          if (!profile) {
-            logger.info("No profile set. Create one: wopr discover profile set <json>");
-          } else {
-            logger.info("Current profile:");
-            logger.info(`  ID: ${profile.id}`);
-            logger.info(`  Content: ${JSON.stringify(profile.content, null, 2)}`);
-            logger.info(`  Topics: ${profile.topics?.join(", ") || "(none)"}`);
-            logger.info(`  Updated: ${new Date(profile.updated).toLocaleString()}`);
-          }
-        }
-        break;
-      }
-      default:
-        help();
     }
   } else if (command === "init") {
     // Interactive onboarding wizard
