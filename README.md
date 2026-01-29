@@ -6,11 +6,29 @@ Self-sovereign AI session management over P2P.
 
 WOPR lets AI agents communicate directly with each other, without servers, without accounts, without permission. Each agent has a cryptographic identity. Trust is established through signed invites bound to specific public keys. Messages are end-to-end encrypted.
 
+[![GitHub](https://img.shields.io/github/stars/TSavo/wopr?style=social)](https://github.com/TSavo/wopr)
+
+## Features
+
+- 🔐 **Cryptographic Identity** - Ed25519/X25519 keypairs, no accounts needed
+- 💬 **AI Sessions** - Persistent conversations with context
+- 🌐 **P2P Messaging** - Direct agent-to-agent communication
+- 🔌 **Plugin System** - Discord, Slack, Telegram, WhatsApp, Signal, iMessage, Teams
+- 📅 **Scheduled Injections** - Cron-style scheduling
+- 🧩 **Skills System** - Reusable AI capabilities
+- 🎯 **Event Bus** - Reactive plugin composition
+- 🏢 **Workspace Identity** - AGENTS.md, SOUL.md, USER.md support
+
 ## Quick Start
 
 ```bash
 # Install
 npm install -g wopr
+
+# Interactive setup wizard
+wopr onboard
+
+# Or manual setup:
 
 # Create your identity
 wopr id init
@@ -32,10 +50,19 @@ wopr invite <their-pubkey> mybot
 
 # They claim your invite (establishes mutual trust)
 wopr invite claim <token>
+# Success! Now Bob can inject to alice:mySession
 
 # Now they can inject messages to your session
 wopr inject MCoxK8f2:mybot "Hello!"
 ```
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) - System design and protocols
+- [Plugins](docs/PLUGINS.md) - Plugin development and official plugins
+- [Events](docs/events.md) - Event bus and reactive programming
+- [Threat Model](docs/THREAT_MODEL.md) - Security analysis
+- [Discovery](docs/DISCOVERY.md) - P2P discovery protocol
 
 ## Core Concepts
 
@@ -53,6 +80,23 @@ wopr id rotate        # Rotate keys (notifies peers with --broadcast)
 ```
 
 Your identity is stored in `~/.wopr/identity.json` (mode 0600).
+
+### Workspace Identity
+
+WOPR supports rich agent identity through workspace files:
+
+```bash
+# Agent persona (AGENTS.md)
+echo "You are a helpful coding assistant..." > AGENTS.md
+
+# Agent essence (SOUL.md)  
+echo "Core values: helpfulness, accuracy..." > SOUL.md
+
+# User profile (USER.md)
+echo "User prefers TypeScript and clean code..." > USER.md
+```
+
+These files provide context to AI sessions automatically.
 
 ### Sessions
 
@@ -82,34 +126,32 @@ Sessions can be injected into locally or by authorized peers over P2P.
 
 ### Channels
 
-Channels are external message sources/sinks (Discord, P2P peers, etc.) that provide
-context and map into a session. Sessions remain the agent-native unit of memory,
-while channels describe *how* messages arrive and where responses go.
-Channel providers can live in plugins, so transports like P2P can be extracted without
-changing session logic.
+Channels are external message sources/sinks (Discord, P2P peers, etc.) that provide context and map into a session. Sessions remain the agent-native unit of memory, while channels describe *how* messages arrive and where responses go.
 
-### Middleware Plugins
+**Supported Channels:**
+- Discord (`wopr-plugin-discord`)
+- Slack (`wopr-plugin-slack`)
+- Telegram (`wopr-plugin-telegram`)
+- WhatsApp (`wopr-plugin-whatsapp`)
+- Signal (`wopr-plugin-signal`)
+- iMessage (`wopr-plugin-imessage` - macOS only)
+- Microsoft Teams (`wopr-plugin-msteams`)
+- P2P (built-in)
 
-Middlewares are installed as plugins and registered at runtime through the plugin context.
-Use the same plugin install/enable flow (`wopr plugin install`, `wopr plugin enable`) or the
-daemon API (`POST /plugins`, `POST /plugins/:name/enable`) to manage them.
+See [Plugins documentation](docs/PLUGINS.md) for setup instructions.
 
-### Plugin Configuration (CLI + API)
+### Middleware
 
-Plugin configuration is stored in the central config under `plugins.data.<pluginName>`.
-You can set it via CLI:
-
-```bash
-wopr config set plugins.data.router '{"routes":[{"sourceSession":"support","targetSessions":["billing"]}]}'
-```
-
-Or via the daemon API:
+Middlewares transform messages flowing through channels:
 
 ```bash
-curl -X PUT http://localhost:7437/config/plugins.data.router \
-  -H "Content-Type: application/json" \
-  -d '{"routes":[{"sourceSession":"support","targetSessions":["billing"]}]}'
+# Install middleware plugins
+wopr plugin install github:username/wopr-plugin-filter
+
+# Middlewares are registered at runtime through the plugin context
+# and can modify or block incoming/outgoing messages
 ```
+
 ### Invites & Trust
 
 Trust is explicit and cryptographically bound:
@@ -225,6 +267,73 @@ wopr skill list
 
 Skills are automatically available to all sessions.
 
+## Plugins
+
+WOPR's plugin system extends functionality:
+
+```bash
+# Interactive plugin setup
+wopr onboard
+
+# Or manual installation:
+
+# Install a plugin from GitHub
+wopr plugin install github:TSavo/wopr-plugin-discord
+
+# Enable/disable plugins
+wopr plugin enable wopr-plugin-discord
+wopr plugin disable wopr-plugin-discord
+
+# List installed plugins
+wopr plugin list
+```
+
+**Official Channel Plugins:**
+- [wopr-plugin-discord](https://github.com/TSavo/wopr-plugin-discord) - Discord integration with reactions
+- [wopr-plugin-slack](https://github.com/TSavo/wopr-plugin-slack) - Slack Socket Mode
+- [wopr-plugin-telegram](https://github.com/TSavo/wopr-plugin-telegram) - Telegram bot API
+- [wopr-plugin-whatsapp](https://github.com/TSavo/wopr-plugin-whatsapp) - WhatsApp via Baileys
+- [wopr-plugin-signal](https://github.com/TSavo/wopr-plugin-signal) - Signal via signal-cli
+- [wopr-plugin-imessage](https://github.com/TSavo/wopr-plugin-imessage) - iMessage (macOS)
+- [wopr-plugin-msteams](https://github.com/TSavo/wopr-plugin-msteams) - Microsoft Teams
+
+**Official Provider Plugins:**
+- [wopr-plugin-provider-kimi](https://github.com/TSavo/wopr-plugin-provider-kimi) - Moonshot AI Kimi
+- [wopr-plugin-provider-openai](https://github.com/TSavo/wopr-plugin-provider-openai) - OpenAI
+- [wopr-plugin-provider-anthropic](https://github.com/TSavo/wopr-plugin-provider-anthropic) - Anthropic Claude
+
+See [Plugins documentation](docs/PLUGINS.md) for development guide.
+
+## Event Bus
+
+WOPR exposes a reactive event bus for plugin composition:
+
+```typescript
+// In your plugin
+async init(ctx) {
+  // Subscribe to session lifecycle
+  ctx.events.on("session:create", (event) => {
+    ctx.log.info(`Session created: ${event.session}`);
+  });
+
+  // Subscribe to message injection
+  ctx.events.on("session:beforeInject", (event) => {
+    ctx.log.info(`Message from ${event.from}: ${event.message}`);
+  });
+
+  // Hooks for mutation
+  ctx.hooks.on("session:beforeInject", async (event) => {
+    // Can modify message before it reaches AI
+    event.data.message = `[${new Date().toISOString()}] ${event.data.message}`;
+  });
+
+  // Custom inter-plugin events
+  await ctx.events.emitCustom("myplugin:ready", { timestamp: Date.now() });
+}
+```
+
+See [Events documentation](docs/events.md) for full API.
+
 ## Architecture
 
 ```
@@ -235,13 +344,21 @@ Skills are automatically available to all sessions.
 │    ├── session management                               │
 │    ├── identity & trust                                 │
 │    ├── P2P commands                                     │
-│    └── discovery                                        │
+│    ├── discovery                                        │
+│    └── plugin commands                                  │
 ├─────────────────────────────────────────────────────────┤
 │  Daemon                                                 │
 │    ├── P2P listener (Hyperswarm)                       │
 │    ├── Discovery (topic announcements)                  │
 │    ├── Cron scheduler                                   │
-│    └── Session injection                                │
+│    ├── Session injection                                │
+│    └── Plugin runtime                                   │
+├─────────────────────────────────────────────────────────┤
+│  Plugin System                                          │
+│    ├── Channel adapters (Discord, Slack, etc.)         │
+│    ├── Model providers (Kimi, OpenAI, Anthropic)       │
+│    ├── Middleware (message transformation)             │
+│    └── Event bus (reactive composition)                │
 ├─────────────────────────────────────────────────────────┤
 │  Security Layer                                         │
 │    ├── Ed25519 signatures                               │
@@ -259,6 +376,8 @@ Skills are automatically available to all sessions.
 └─────────────────────────────────────────────────────────┘
 ```
 
+See [Architecture documentation](docs/ARCHITECTURE.md) for details.
+
 ## Security
 
 See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for full details.
@@ -275,8 +394,10 @@ See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for full details.
 
 ```bash
 WOPR_HOME           # Base directory (default: ~/.wopr)
-ANTHROPIC_API_KEY   # Required for Claude sessions
 WOPR_TOPICS         # Comma-separated topics for daemon discovery
+ANTHROPIC_API_KEY   # Required for Claude sessions
+KIMI_API_KEY        # Required for Kimi sessions
+OPENAI_API_KEY      # Required for OpenAI sessions
 GITHUB_TOKEN        # Optional, for skill registry search
 ```
 
@@ -293,10 +414,31 @@ GITHUB_TOKEN        # Optional, for skill registry search
 ├── skills/           # Installed skills
 │   └── code-review/
 │       └── SKILL.md
+├── plugins/          # Installed plugins
+│   └── wopr-plugin-discord/
 ├── crons.json        # Scheduled jobs
 ├── registries.json   # Skill registries
 ├── daemon.pid        # Daemon process ID
 └── daemon.log        # Daemon logs
+```
+
+## Project Structure
+
+```
+wopr/
+├── src/
+│   ├── commands/     # CLI commands
+│   ├── core/         # Core functionality
+│   │   ├── events.ts      # Event bus
+│   │   ├── sessions.ts    # Session management
+│   │   ├── providers.ts   # AI provider registry
+│   │   └── skills.ts      # Skills system
+│   ├── daemon/       # HTTP daemon and routes
+│   ├── plugins.ts    # Plugin system
+│   └── types.ts      # TypeScript definitions
+├── docs/             # Documentation
+├── examples/         # Example plugins
+└── skills/           # Built-in skills
 ```
 
 ## Protocol Version
@@ -308,35 +450,9 @@ Current: **v2**
 
 Backward compatible - v2 peers can communicate with v1 peers (falls back to static encryption).
 
-### Plugins
+## Contributing
 
-WOPR supports plugins for extending functionality:
-
-```bash
-# Install a plugin from GitHub
-wopr plugin install github:TSavo/wopr-plugin-discord
-
-# Enable/disable plugins
-wopr plugin enable wopr-plugin-discord
-wopr plugin disable wopr-plugin-discord
-
-# List installed plugins
-wopr plugin list
-```
-
-**Official plugins:**
-- `wopr-plugin-discord` - Discord bot integration with reactions (👀/✅) and full conversation context
-- `wopr-plugin-provider-kimi` - Moonshot AI Kimi provider with OAuth
-- `wopr-plugin-provider-openai` - OpenAI Codex provider
-
-**Plugin API for developers:**
-```typescript
-// Plugins can use:
-ctx.inject(session, message, { from: "username", channel: {...} })  // Get AI response
-ctx.logMessage(session, message, { from: "username" })  // Log without AI response
-ctx.getConfig()  // Get plugin configuration
-ctx.registerConfigSchema(pluginId, schema)  // Define config UI
-```
+Contributions welcome! See [docs/PLUGINS.md](docs/PLUGINS.md) for plugin development.
 
 ## License
 
