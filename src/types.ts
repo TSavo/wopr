@@ -306,28 +306,6 @@ export interface ContextPart {
   };
 }
 
-export interface MiddlewareInput {
-  session: string;
-  from: string;
-  message: string;
-  channel?: ChannelRef;
-}
-
-export interface MiddlewareOutput {
-  session: string;
-  from: string;
-  response: string;
-  channel?: ChannelRef;
-}
-
-export interface MessageMiddleware {
-  name: string;
-  priority?: number;  // Lower = runs first (default: 100)
-  enabled?: boolean | ((input: MiddlewareInput | MiddlewareOutput) => boolean);
-  onIncoming?(input: MiddlewareInput): Promise<string | null>;
-  onOutgoing?(output: MiddlewareOutput): Promise<string | null>;
-}
-
 export interface ChannelAdapter {
   channel: ChannelRef;
   session: string;
@@ -585,29 +563,60 @@ export interface MutableHookEvent<T> {
 }
 
 /**
+ * Hook options - priority ordering and identification
+ */
+export interface HookOptions {
+  /** Lower = runs first (default: 100) */
+  priority?: number;
+  /** Name for debugging and removal */
+  name?: string;
+  /** Run once then auto-remove */
+  once?: boolean;
+}
+
+/**
  * Hook handler types
  */
-export type BeforeInjectHandler = (event: MutableHookEvent<{ message: string; from: string; channel?: any }>) => void | Promise<void>;
-export type AfterInjectHandler = (event: { session: string; message: string; response: string; from: string }) => void | Promise<void>;
+export type MessageIncomingHandler = (event: MutableHookEvent<{ message: string; from: string; channel?: any }>) => void | Promise<void>;
+export type MessageOutgoingHandler = (event: MutableHookEvent<{ response: string; from: string; channel?: any }>) => void | Promise<void>;
 export type SessionCreateHandler = (event: { session: string; config?: any }) => void | Promise<void>;
 export type SessionDestroyHandler = (event: { session: string; history: any[]; reason?: string }) => void | Promise<void>;
 export type ChannelMessageHandler = (event: MutableHookEvent<{ channel: any; message: string; from: string; metadata?: any }>) => void | Promise<void>;
 
 /**
- * Hook manager - typed shorthand for common event patterns
+ * Hook manager - typed hooks for core lifecycle events
+ *
+ * Mutable hooks (can transform data, call preventDefault()):
+ * - message:incoming - transform/block incoming messages
+ * - message:outgoing - transform/block outgoing responses
+ * - channel:message - transform/block channel messages
+ *
+ * Read-only hooks (observe only):
+ * - session:create - session created
+ * - session:destroy - session destroyed
  */
 export interface WOPRHookManager {
-  on(event: "session:beforeInject", handler: BeforeInjectHandler): () => void;
-  on(event: "session:afterInject", handler: AfterInjectHandler): () => void;
-  on(event: "session:create", handler: SessionCreateHandler): () => void;
-  on(event: "session:destroy", handler: SessionDestroyHandler): () => void;
-  on(event: "channel:message", handler: ChannelMessageHandler): () => void;
-  
-  off(event: "session:beforeInject", handler: BeforeInjectHandler): void;
-  off(event: "session:afterInject", handler: AfterInjectHandler): void;
+  // Mutable hooks - can transform data or block
+  on(event: "message:incoming", handler: MessageIncomingHandler, options?: HookOptions): () => void;
+  on(event: "message:outgoing", handler: MessageOutgoingHandler, options?: HookOptions): () => void;
+  on(event: "channel:message", handler: ChannelMessageHandler, options?: HookOptions): () => void;
+
+  // Read-only hooks - observe lifecycle
+  on(event: "session:create", handler: SessionCreateHandler, options?: HookOptions): () => void;
+  on(event: "session:destroy", handler: SessionDestroyHandler, options?: HookOptions): () => void;
+
+  // Remove by handler reference
+  off(event: "message:incoming", handler: MessageIncomingHandler): void;
+  off(event: "message:outgoing", handler: MessageOutgoingHandler): void;
+  off(event: "channel:message", handler: ChannelMessageHandler): void;
   off(event: "session:create", handler: SessionCreateHandler): void;
   off(event: "session:destroy", handler: SessionDestroyHandler): void;
-  off(event: "channel:message", handler: ChannelMessageHandler): void;
+
+  // Remove by name
+  offByName(name: string): void;
+
+  // List registered hooks
+  list(): Array<{ event: string; name?: string; priority: number }>;
 }
 
 // ============================================================================
@@ -687,12 +696,6 @@ export interface WOPRPluginContext {
   getChannels(): ChannelAdapter[];
   getChannelsForSession(session: string): ChannelAdapter[];
 
-  // Middlewares - plugins register message middleware for channels/sessions
-  registerMiddleware(middleware: MessageMiddleware): void;
-  unregisterMiddleware(name: string): void;
-  getMiddlewares(): MessageMiddleware[];
-  getMiddlewareChain(): { name: string; priority: number; enabled: boolean }[];
-
   // Web UI extensions - plugins register navigation links
   registerWebUiExtension(extension: WebUiExtension): void;
   unregisterWebUiExtension(id: string): void;
@@ -727,6 +730,14 @@ export interface WOPRPluginContext {
   unregisterExtension(name: string): void;
   getExtension<T = unknown>(name: string): T | undefined;
   listExtensions(): string[];
+
+  // Voice providers - STT and TTS plugins register providers
+  // Channel plugins discover via getSTT()/getTTS() or getExtension('stt'/'tts')
+  registerSTTProvider(provider: import("./voice/types.js").STTProvider): void;
+  registerTTSProvider(provider: import("./voice/types.js").TTSProvider): void;
+  getSTT(): import("./voice/types.js").STTProvider | null;
+  getTTS(): import("./voice/types.js").TTSProvider | null;
+  hasVoice(): { stt: boolean; tts: boolean };
 
   // Logging
   log: PluginLogger;

@@ -7,5 +7,5 @@ export { cronsRouter } from "./crons.js";
 export { authRouter } from "./auth.js";
 export { pluginsRouter } from "./plugins.js";
 export { skillsRouter } from "./skills.js";
-export { middlewareRouter } from "./middleware.js";
+export { hooksRouter } from "./hooks.js";
 export { providersRouter } from "./providers.js";

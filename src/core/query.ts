@@ -7,6 +7,7 @@ import { logger } from "../logger.js";
  */
 
 import { providerRegistry } from "./providers.js";
+import { config as configManager } from "./config.js";
 import {
   ProviderConfig,
   ModelQueryOptions,
@@ -54,16 +55,30 @@ export async function executeQuery(request: QueryRequest): Promise<ModelResponse
     // Resolve provider with fallback
     const resolved = await providerRegistry.resolveProvider(config);
 
-    // Prepare query options
+    // Get global provider defaults from config
+    const globalDefaults = configManager.getProviderDefaults(resolved.provider.id);
+
+    // Model resolution hierarchy:
+    // 1. Explicit request.model
+    // 2. Per-session config.model
+    // 3. Global provider default
+    // 4. SDK default (handled by provider)
+    const resolvedModel = request.model || config.model || globalDefaults?.model;
+
+    // Prepare query options with merged defaults
     const options: ModelQueryOptions = {
       prompt: request.prompt,
       systemPrompt: request.systemPrompt,
       resume: request.sessionId,
-      model: request.model || config.model,
-      temperature: request.temperature,
-      maxTokens: request.maxTokens,
-      topP: request.topP,
-      providerOptions: request.providerOptions || config.options,
+      model: resolvedModel,
+      temperature: request.temperature ?? globalDefaults?.temperature,
+      maxTokens: request.maxTokens ?? globalDefaults?.maxTokens,
+      topP: request.topP ?? globalDefaults?.topP,
+      providerOptions: {
+        ...globalDefaults?.options,
+        ...config.options,
+        ...request.providerOptions,
+      },
     };
 
     // Execute query (returns async generator for streaming)

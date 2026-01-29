@@ -71,7 +71,7 @@ Usage:
   wopr session list                      List all sessions
   wopr session show <name> [--limit N]   Show session details and conversation history
   wopr session delete <name>             Delete a session
-  wopr session set-provider <name> <id> [--fallback chain]  Update session provider
+  wopr session set-provider <name> <id> [--model name] [--fallback chain]  Update session provider
   wopr session init-docs <name>          Initialize SOUL.md, AGENTS.md, USER.md for session
 
   wopr skill list                        List installed skills
@@ -121,6 +121,10 @@ Usage:
   wopr providers add <id> [credential]       Add/update provider credential
   wopr providers remove <id>                 Remove provider credential
   wopr providers health-check                Check health of all providers
+  wopr providers default <id> [options]      Set global provider defaults
+    --model <name>                           Default model for this provider
+    --reasoning-effort <level>               For Codex: minimal/low/medium/high/xhigh
+  wopr providers show-defaults [id]          Show global provider defaults
 
   wopr middleware list                       List all middleware
   wopr middleware chain                      Show execution order
@@ -282,6 +286,69 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         break;
       }
 
+      case "default": {
+        if (!args[0]) {
+          logger.error("Usage: wopr providers default <provider-id> [--model name] [--reasoning-effort level]");
+          process.exit(1);
+        }
+
+        const providerId = args[0];
+        const { flags } = parseFlags(args.slice(1));
+
+        if (!flags.model && !flags["reasoning-effort"]) {
+          logger.error("Specify at least one: --model <name> or --reasoning-effort <level>");
+          process.exit(1);
+        }
+
+        // Set global provider defaults
+        if (flags.model) {
+          config.setProviderDefault(providerId, "model", flags.model as string);
+        }
+        if (flags["reasoning-effort"]) {
+          config.setProviderDefault(providerId, "reasoningEffort", flags["reasoning-effort"] as string);
+        }
+
+        await config.save();
+
+        const defaults = config.getProviderDefaults(providerId);
+        logger.info(`Updated global defaults for ${providerId}:`);
+        if (defaults?.model) logger.info(`  model: ${defaults.model}`);
+        if (defaults?.reasoningEffort) logger.info(`  reasoningEffort: ${defaults.reasoningEffort}`);
+        break;
+      }
+
+      case "show-defaults": {
+        const providerId = args[0];
+
+        if (providerId) {
+          const defaults = config.getProviderDefaults(providerId);
+          if (!defaults || Object.keys(defaults).length === 0) {
+            logger.info(`No global defaults set for ${providerId}`);
+          } else {
+            logger.info(`Global defaults for ${providerId}:`);
+            for (const [key, value] of Object.entries(defaults)) {
+              logger.info(`  ${key}: ${value}`);
+            }
+          }
+        } else {
+          // Show all provider defaults
+          const allConfig = config.get();
+          if (!allConfig.providers || Object.keys(allConfig.providers).length === 0) {
+            logger.info("No global provider defaults set.");
+            logger.info("Set with: wopr providers default <id> --model <name>");
+          } else {
+            logger.info("Global provider defaults:");
+            for (const [pid, defaults] of Object.entries(allConfig.providers)) {
+              logger.info(`\n  ${pid}:`);
+              for (const [key, value] of Object.entries(defaults as Record<string, unknown>)) {
+                logger.info(`    ${key}: ${value}`);
+              }
+            }
+          }
+        }
+        break;
+      }
+
       default:
         help();
     }
@@ -324,7 +391,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
 
       case "set-provider": {
         if (!args[0] || !args[1]) {
-          logger.error("Usage: wopr session set-provider <name> <provider-id> [--fallback chain]");
+          logger.error("Usage: wopr session set-provider <name> <provider-id> [--model name] [--fallback chain]");
           process.exit(1);
         }
 
@@ -340,19 +407,27 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           process.exit(1);
         }
 
-        const providerConfig = {
+        const providerConfig: { name: string; model?: string; fallback?: string[] } = {
           name: providerId,
-          fallback: flags.fallback ? (flags.fallback as string).split(",").map(s => s.trim()) : undefined,
         };
+        if (flags.model) {
+          providerConfig.model = flags.model as string;
+        }
+        if (flags.fallback) {
+          providerConfig.fallback = (flags.fallback as string).split(",").map(s => s.trim());
+        }
 
         // Save provider config
         const { SESSIONS_DIR } = await import("./paths.js");
         const providerFile = (await import("path")).join(SESSIONS_DIR, `${sessionName}.provider.json`);
         await (await import("fs/promises")).writeFile(providerFile, JSON.stringify(providerConfig, null, 2));
 
+        const extras: string[] = [];
+        if (flags.model) extras.push(`model: ${flags.model}`);
+        if (flags.fallback) extras.push(`fallback: ${flags.fallback}`);
         logger.info(
           `Updated session "${sessionName}" provider to: ${providerId}${
-            flags.fallback ? ` (fallback: ${flags.fallback})` : ""
+            extras.length > 0 ? ` (${extras.join(", ")})` : ""
           }`
         );
         break;

@@ -389,3 +389,83 @@ export async function emitConfigChange(
 export async function emitSystemShutdown(reason: string, code?: number): Promise<void> {
   await eventBus.emit("system:shutdown", { reason, code }, "core");
 }
+
+// ============================================================================
+// Mutable Event Helpers (for hook-based message transformation)
+// ============================================================================
+
+/**
+ * Mutable incoming message event result
+ */
+export interface MutableIncomingResult {
+  message: string;
+  prevented: boolean;
+}
+
+/**
+ * Mutable outgoing response event result
+ */
+export interface MutableOutgoingResult {
+  response: string;
+  prevented: boolean;
+}
+
+/**
+ * Emit an incoming message event that hooks can transform or block.
+ * Replaces the old middleware pattern with hooks.
+ *
+ * @returns The (possibly transformed) message and whether it was blocked
+ */
+export async function emitMutableIncoming(
+  session: string,
+  message: string,
+  from: string,
+  channel?: { type: string; id: string; name?: string }
+): Promise<MutableIncomingResult> {
+  // Create mutable payload that hooks can modify
+  const mutablePayload = {
+    session,
+    message,
+    from,
+    channel,
+    _prevented: false,
+  };
+
+  // Emit the event - handlers can mutate mutablePayload
+  await eventBus.emit("session:beforeInject", mutablePayload as any, "core");
+
+  return {
+    message: mutablePayload.message,
+    prevented: mutablePayload._prevented,
+  };
+}
+
+/**
+ * Emit an outgoing response event that hooks can transform or block.
+ * Replaces the old middleware pattern with hooks.
+ *
+ * @returns The (possibly transformed) response and whether it was blocked
+ */
+export async function emitMutableOutgoing(
+  session: string,
+  response: string,
+  from: string,
+  channel?: { type: string; id: string; name?: string }
+): Promise<MutableOutgoingResult> {
+  // Create mutable payload that hooks can modify
+  const mutablePayload = {
+    session,
+    response,
+    from,
+    channel,
+    _prevented: false,
+  };
+
+  // Emit the event - handlers can mutate mutablePayload
+  await eventBus.emit("session:afterInject", mutablePayload as any, "core");
+
+  return {
+    response: mutablePayload.response,
+    prevented: mutablePayload._prevented,
+  };
+}

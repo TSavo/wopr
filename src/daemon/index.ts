@@ -21,7 +21,7 @@ import { authRouter } from "./routes/auth.js";
 import { pluginsRouter } from "./routes/plugins.js";
 import { skillsRouter } from "./routes/skills.js";
 import { configRouter } from "./routes/config.js";
-import { middlewareRouter } from "./routes/middleware.js";
+import { hooksRouter } from "./routes/hooks.js";
 import { providersRouter } from "./routes/providers.js";
 import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast } from "./ws.js";
 
@@ -65,7 +65,7 @@ export function createApp() {
   app.route("/crons", cronsRouter);
   app.route("/plugins", pluginsRouter);
   app.route("/skills", skillsRouter);
-  app.route("/middleware", middlewareRouter);
+  app.route("/hooks", hooksRouter);
   app.route("/providers", providersRouter);
 
   return app;

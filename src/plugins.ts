@@ -18,14 +18,12 @@ import {
   StreamCallback,
   ChannelAdapter,
   ChannelRef,
-  MessageMiddleware,
-  MiddlewareInput,
-  MiddlewareOutput,
   WebUiExtension,
   UiComponentExtension,
   ContextProvider,
   ConfigSchema,
   PluginInjectOptions,
+  HookOptions,
 } from "./types.js";
 import { logMessage as logMessageToSession } from "./core/sessions.js";
 import {
@@ -41,14 +39,21 @@ import type {
 } from "./core/context.js";
 import { resolveIdentity, resolveUserProfile } from "./core/workspace.js";
 import { eventBus } from "./core/events.js";
-import type { 
-  WOPREventBus, 
-  WOPRHookManager, 
+import type {
+  WOPREventBus,
+  WOPRHookManager,
   EventHandler,
   MutableHookEvent,
   SessionInjectEvent,
   ChannelMessageEvent,
 } from "./types.js";
+import { getVoiceRegistry } from "./voice/index.js";
+import type { STTProvider, TTSProvider, VoicePluginRequirements, InstallMethod } from "./voice/types.js";
+import {
+  checkRequirements,
+  ensureRequirements,
+  formatMissingRequirements,
+} from "./plugins/requirements.js";
 
 const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
 const PLUGINS_DIR = join(WOPR_HOME, "plugins");
@@ -64,7 +69,6 @@ const loadedPlugins: Map<string, { plugin: WOPRPlugin; context: WOPRPluginContex
 // Context providers - session -> provider mapping
 const contextProviders: Map<string, ContextProvider> = new Map();
 const channelAdapters: Map<string, ChannelAdapter> = new Map();
-export const messageMiddlewares: Map<string, MessageMiddleware> = new Map();
 const webUiExtensions: Map<string, WebUiExtension> = new Map();
 const uiComponents: Map<string, UiComponentExtension> = new Map();
 
@@ -378,22 +382,6 @@ function createPluginContext(
       return Array.from(channelAdapters.values()).filter(adapter => adapter.session === session);
     },
 
-    registerMiddleware(middleware: MessageMiddleware) {
-      messageMiddlewares.set(middleware.name, middleware);
-    },
-
-    unregisterMiddleware(name: string) {
-      messageMiddlewares.delete(name);
-    },
-
-    getMiddlewares() {
-      return getSortedMiddlewares();
-    },
-
-    getMiddlewareChain() {
-      return getMiddlewareChain();
-    },
-
     registerWebUiExtension(extension: WebUiExtension) {
       webUiExtensions.set(`${pluginName}:${extension.id}`, extension);
     },
@@ -496,6 +484,40 @@ function createPluginContext(
       return listPluginExtensions();
     },
 
+    // Voice extensions - allow voice plugins to register STT/TTS providers
+    // and channel plugins to discover and use them
+    registerSTTProvider(provider: STTProvider) {
+      const voiceRegistry = getVoiceRegistry();
+      voiceRegistry.registerSTT(provider);
+      // Also register as an extension for discovery via getExtension('stt')
+      registerPluginExtension(pluginName, "stt", provider);
+      logger.info(`[plugins] STT provider registered: ${provider.metadata.name}`);
+    },
+
+    registerTTSProvider(provider: TTSProvider) {
+      const voiceRegistry = getVoiceRegistry();
+      voiceRegistry.registerTTS(provider);
+      // Also register as an extension for discovery via getExtension('tts')
+      registerPluginExtension(pluginName, "tts", provider);
+      logger.info(`[plugins] TTS provider registered: ${provider.metadata.name}`);
+    },
+
+    getSTT(): STTProvider | null {
+      return getVoiceRegistry().getSTT();
+    },
+
+    getTTS(): TTSProvider | null {
+      return getVoiceRegistry().getTTS();
+    },
+
+    hasVoice(): { stt: boolean; tts: boolean } {
+      const voiceRegistry = getVoiceRegistry();
+      return {
+        stt: voiceRegistry.getSTT() !== null,
+        tts: voiceRegistry.getTTS() !== null,
+      };
+    },
+
     log: createPluginLogger(plugin.name),
 
     getPluginDir(): string {
@@ -562,59 +584,179 @@ function createPluginEventBus(pluginName: string): WOPREventBus {
 }
 
 /**
+ * Hook registration entry with metadata
+ */
+interface HookEntry {
+  handler: Function;
+  priority: number;
+  name?: string;
+  once: boolean;
+  unsubscribe: () => void;
+}
+
+/**
  * Create a hook manager scoped to a plugin
  * Hooks provide typed, mutable access to core lifecycle events
+ * with priority ordering (lower = runs first)
  */
 function createPluginHookManager(pluginName: string): WOPRHookManager {
-  const hookHandlers = new Map<string, Set<Function>>();
+  // Map of event -> array of hook entries (sorted by priority)
+  const hookEntries = new Map<string, HookEntry[]>();
+
+  // Mutable events that can transform data or block
+  const mutableEvents = new Set(["message:incoming", "message:outgoing", "channel:message"]);
+
+  // Map hook event names to underlying event bus events
+  const eventMapping: Record<string, string> = {
+    "message:incoming": "session:beforeInject",
+    "message:outgoing": "session:afterInject",
+  };
+
+  function getEntries(event: string): HookEntry[] {
+    if (!hookEntries.has(event)) {
+      hookEntries.set(event, []);
+    }
+    return hookEntries.get(event)!;
+  }
+
+  function insertSorted(entries: HookEntry[], entry: HookEntry): void {
+    // Insert in priority order (lower = first)
+    const idx = entries.findIndex(e => e.priority > entry.priority);
+    if (idx === -1) {
+      entries.push(entry);
+    } else {
+      entries.splice(idx, 0, entry);
+    }
+  }
 
   return {
-    on(event: string, handler: Function): () => void {
-      if (!hookHandlers.has(event)) {
-        hookHandlers.set(event, new Set());
-      }
-      hookHandlers.get(event)!.add(handler);
+    on(event: string, handler: Function, options?: HookOptions): () => void {
+      const priority = options?.priority ?? 100;
+      const name = options?.name;
+      const once = options?.once ?? false;
 
-      // Subscribe to underlying event bus
-      const unsubscribe = eventBus.on(event as any, async (payload, evt) => {
-        const handlers = hookHandlers.get(event);
-        if (!handlers) return;
+      // Resolve to underlying event bus event name
+      const busEvent = eventMapping[event] || event;
 
-        // Create mutable event for before hooks
-        if (event === "session:beforeInject" || event === "channel:message") {
+      // Create unsubscribe function for event bus
+      const unsubscribe = eventBus.on(busEvent as any, async (payload, evt) => {
+        const entries = getEntries(event);
+        const isMutable = mutableEvents.has(event);
+
+        if (isMutable) {
+          // Mutable event - handlers can transform data
           let prevented = false;
           const mutableEvent: MutableHookEvent<any> = {
             data: payload,
             session: payload.session || "default",
-            preventDefault() { prevented = true; },
+            preventDefault() {
+              prevented = true;
+              // Set _prevented on payload for mutable emit functions
+              if (payload && typeof payload === "object") {
+                (payload as any)._prevented = true;
+              }
+            },
             isPrevented() { return prevented; },
           };
 
-          for (const h of handlers) {
-            await h(mutableEvent);
+          for (const entry of [...entries]) {
+            await entry.handler(mutableEvent);
+
+            // Handle once option
+            if (entry.once) {
+              const idx = entries.indexOf(entry);
+              if (idx !== -1) {
+                entries.splice(idx, 1);
+                entry.unsubscribe();
+              }
+            }
+
             if (mutableEvent.isPrevented()) break;
           }
         } else {
-          // Read-only for after hooks
-          for (const h of handlers) {
-            await h(payload);
+          // Read-only event
+          for (const entry of [...entries]) {
+            await entry.handler(payload);
+
+            // Handle once option
+            if (entry.once) {
+              const idx = entries.indexOf(entry);
+              if (idx !== -1) {
+                entries.splice(idx, 1);
+                entry.unsubscribe();
+              }
+            }
           }
         }
       });
 
+      const entry: HookEntry = {
+        handler,
+        priority,
+        name,
+        once,
+        unsubscribe,
+      };
+
+      const entries = getEntries(event);
+      insertSorted(entries, entry);
+
       return () => {
-        hookHandlers.get(event)?.delete(handler);
-        if (hookHandlers.get(event)?.size === 0) {
-          hookHandlers.delete(event);
+        const entries = getEntries(event);
+        const idx = entries.indexOf(entry);
+        if (idx !== -1) {
+          entries.splice(idx, 1);
         }
         unsubscribe();
       };
     },
 
     off(event: string, handler: Function): void {
-      hookHandlers.get(event)?.delete(handler);
+      const entries = getEntries(event);
+      const idx = entries.findIndex(e => e.handler === handler);
+      if (idx !== -1) {
+        entries[idx].unsubscribe();
+        entries.splice(idx, 1);
+      }
+    },
+
+    offByName(name: string): void {
+      for (const [event, entries] of hookEntries) {
+        const toRemove = entries.filter(e => e.name === name);
+        for (const entry of toRemove) {
+          entry.unsubscribe();
+          const idx = entries.indexOf(entry);
+          if (idx !== -1) {
+            entries.splice(idx, 1);
+          }
+        }
+      }
+    },
+
+    list(): Array<{ event: string; name?: string; priority: number }> {
+      const result: Array<{ event: string; name?: string; priority: number }> = [];
+      for (const [event, entries] of hookEntries) {
+        for (const entry of entries) {
+          result.push({
+            event,
+            name: entry.name,
+            priority: entry.priority,
+          });
+        }
+      }
+      return result.sort((a, b) => a.priority - b.priority);
     },
   } as WOPRHookManager;
+}
+
+/** Options for loading plugins */
+export interface LoadPluginOptions {
+  /** Automatically install missing dependencies */
+  autoInstall?: boolean;
+  /** Skip requirements check entirely */
+  skipRequirementsCheck?: boolean;
+  /** Prompt function for interactive install */
+  promptInstall?: (message: string) => Promise<boolean>;
 }
 
 export async function loadPlugin(
@@ -622,17 +764,50 @@ export async function loadPlugin(
   injectors: {
     inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
     getSessions: () => string[];
-  }
+  },
+  options: LoadPluginOptions = {},
 ): Promise<WOPRPlugin> {
-  // Find the entry point
+  // Find the entry point and read package.json
   let entryPoint = installed.path;
+  let pkg: any = {};
+
   if (existsSync(join(installed.path, "package.json"))) {
-    const pkg = JSON.parse(readFileSync(join(installed.path, "package.json"), "utf-8"));
+    pkg = JSON.parse(readFileSync(join(installed.path, "package.json"), "utf-8"));
     entryPoint = join(installed.path, pkg.main || "index.js");
   } else if (existsSync(join(installed.path, "index.js"))) {
     entryPoint = join(installed.path, "index.js");
   } else if (existsSync(join(installed.path, "index.ts"))) {
     entryPoint = join(installed.path, "index.ts");
+  }
+
+  // Check requirements from package.json wopr.plugin metadata
+  if (!options.skipRequirementsCheck) {
+    const pluginMeta = pkg.wopr?.plugin;
+    const requires: VoicePluginRequirements | undefined = pluginMeta?.requires;
+    const installMethods: InstallMethod[] | undefined = pluginMeta?.install;
+
+    if (requires) {
+      logger.info(`[plugins] Checking requirements for ${installed.name}...`);
+
+      const { satisfied, installed: installedDeps, errors } = await ensureRequirements(
+        requires,
+        installMethods,
+        {
+          auto: options.autoInstall,
+          prompt: options.promptInstall,
+        },
+      );
+
+      if (!satisfied) {
+        const check = await checkRequirements(requires);
+        const missing = formatMissingRequirements(check);
+        throw new Error(`Plugin ${installed.name} requirements not satisfied:\n${missing}`);
+      }
+
+      if (installedDeps.length > 0) {
+        logger.info(`[plugins] Installed ${installedDeps.length} dependencies for ${installed.name}`);
+      }
+    }
   }
 
   // Temporarily change cwd to plugin directory for proper module resolution
@@ -778,67 +953,6 @@ export function getChannelsForSession(session: string): ChannelAdapter[] {
   return Array.from(channelAdapters.values()).filter(adapter => adapter.session === session);
 }
 
-export function getMiddlewares(): MessageMiddleware[] {
-  return getSortedMiddlewares();
-}
-
-export function getMiddlewareChain(): { name: string; priority: number; enabled: boolean }[] {
-  return getSortedMiddlewares().map(m => ({
-    name: m.name,
-    priority: m.priority ?? 100,
-    enabled: m.enabled !== false
-  }));
-}
-
-function getSortedMiddlewares(): MessageMiddleware[] {
-  return Array.from(messageMiddlewares.values())
-    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
-}
-
-function isMiddlewareEnabled(middleware: MessageMiddleware, data: MiddlewareInput | MiddlewareOutput): boolean {
-  if (typeof middleware.enabled === "function") {
-    return middleware.enabled(data);
-  }
-  return middleware.enabled !== false;
-}
-
-export async function applyIncomingMiddlewares(input: MiddlewareInput): Promise<string | null> {
-  let message = input.message;
-  
-  for (const middleware of getSortedMiddlewares()) {
-    if (!middleware.onIncoming) continue;
-    if (!isMiddlewareEnabled(middleware, input)) continue;
-    
-    try {
-      const result = await middleware.onIncoming({ ...input, message });
-      if (result === null) return null;
-      message = result;
-    } catch (err) {
-      logger.error(`[middleware] ${middleware.name} failed on incoming:`, err);
-      // Continue to next middleware or block? Let's continue for resilience
-    }
-  }
-  return message;
-}
-
-export async function applyOutgoingMiddlewares(output: MiddlewareOutput): Promise<string | null> {
-  let response = output.response;
-  
-  for (const middleware of getSortedMiddlewares()) {
-    if (!middleware.onOutgoing) continue;
-    if (!isMiddlewareEnabled(middleware, output)) continue;
-    
-    try {
-      const result = await middleware.onOutgoing({ ...output, response });
-      if (result === null) return null;
-      response = result;
-    } catch (err) {
-      logger.error(`[middleware] ${middleware.name} failed on outgoing:`, err);
-    }
-  }
-  return response;
-}
-
 // ============================================================================
 // Plugin Logger
 // ============================================================================
@@ -866,40 +980,58 @@ function createPluginLogger(pluginName: string): PluginLogger {
 // Batch Plugin Operations
 // ============================================================================
 
-export async function loadAllPlugins(injectors: {
-  inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
-  getSessions: () => string[];
-}): Promise<void> {
+export async function loadAllPlugins(
+  injectors: {
+    inject: (session: string, message: string, options?: PluginInjectOptions) => Promise<string>;
+    getSessions: () => string[];
+  },
+  options: LoadPluginOptions = {},
+): Promise<void> {
   logger.info(`[plugins] loadAllPlugins starting...`);
   logger.info(`[plugins] WOPR_HOME: ${process.env.WOPR_HOME || "not set"}`);
-  
+  if (options.autoInstall) {
+    logger.info(`[plugins] Auto-install enabled`);
+  }
+
   const installed = getInstalledPlugins();
   logger.info(`[plugins] Found ${installed.length} installed plugins`);
-  
+
   for (const p of installed) {
     logger.info(`[plugins]  - ${p.name}: enabled=${p.enabled}, path=${p.path}`);
   }
-  
+
   let loadedCount = 0;
+  const failed: { name: string; error: string }[] = [];
+
   for (const plugin of installed) {
     logger.info(`[plugins] Processing ${plugin.name}...`);
     if (!plugin.enabled) {
       logger.info(`[plugins]   Skipping ${plugin.name} (disabled)`);
       continue;
     }
-    
+
     logger.info(`[plugins]   Loading ${plugin.name} from ${plugin.path}...`);
     try {
-      await loadPlugin(plugin, injectors);
+      await loadPlugin(plugin, injectors, options);
       loadedCount++;
       logger.info(`[plugins]   ✓ Loaded: ${plugin.name}`);
     } catch (err: any) {
       logger.error(`[plugins]   ✗ Failed to load ${plugin.name}:`, err.message);
-      logger.error(`[plugins]     Stack:`, err.stack?.substring(0, 200));
+      if (err.stack) {
+        logger.error(`[plugins]     Stack:`, err.stack.substring(0, 200));
+      }
+      failed.push({ name: plugin.name, error: err.message });
     }
   }
-  
+
   logger.info(`[plugins] loadAllPlugins complete. Loaded ${loadedCount}/${installed.length} plugins`);
+
+  if (failed.length > 0) {
+    logger.warn(`[plugins] ${failed.length} plugins failed to load:`);
+    for (const f of failed) {
+      logger.warn(`[plugins]   - ${f.name}: ${f.error.split("\n")[0]}`);
+    }
+  }
 }
 
 export async function shutdownAllPlugins(): Promise<void> {

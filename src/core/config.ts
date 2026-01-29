@@ -7,6 +7,18 @@ import { join } from "path";
 import { WOPR_HOME, CONFIG_FILE } from "../paths.js";
 
 import { logger } from "../logger.js";
+/**
+ * Per-provider default settings
+ */
+export interface ProviderDefaults {
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  reasoningEffort?: string; // For Codex: minimal/low/medium/high/xhigh
+  options?: Record<string, unknown>;
+}
+
 export interface WoprConfig {
   daemon: {
     port: number;
@@ -40,6 +52,12 @@ export interface WoprConfig {
       enabled: boolean;
     };
   };
+  /**
+   * Per-provider default settings
+   * e.g., providers.codex.model = "gpt-5.2"
+   *       providers.anthropic.model = "claude-opus-4-5-20251101"
+   */
+  providers?: Record<string, ProviderDefaults>;
 }
 
 const DEFAULT_CONFIG: WoprConfig = {
@@ -59,6 +77,7 @@ const DEFAULT_CONFIG: WoprConfig = {
     directories: [join(WOPR_HOME, "plugins")],
     data: {},
   },
+  providers: {},
 };
 
 export class ConfigManager {
@@ -123,6 +142,28 @@ export class ConfigManager {
 
   reset(): void {
     this.config = { ...DEFAULT_CONFIG };
+  }
+
+  /**
+   * Get default settings for a provider
+   * Used for global provider defaults (model, temperature, etc.)
+   */
+  getProviderDefaults(providerId: string): ProviderDefaults | undefined {
+    return this.config.providers?.[providerId];
+  }
+
+  /**
+   * Set a provider default setting
+   * e.g., setProviderDefault("codex", "model", "gpt-5.2")
+   */
+  setProviderDefault(providerId: string, key: keyof ProviderDefaults, value: any): void {
+    if (!this.config.providers) {
+      this.config.providers = {};
+    }
+    if (!this.config.providers[providerId]) {
+      this.config.providers[providerId] = {};
+    }
+    (this.config.providers[providerId] as any)[key] = value;
   }
 
   private merge(defaults: any, overrides: any): any {
