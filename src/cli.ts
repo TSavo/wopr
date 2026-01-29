@@ -62,7 +62,8 @@ function help(): void {
 wopr - Self-sovereign AI session management
 
 Usage:
-  wopr init                              Interactive setup wizard
+  wopr onboard                           Interactive onboarding wizard
+  wopr configure                         Re-run configuration wizard
 
   wopr session create <name> [context]   Create a session with optional context
   wopr session create <name> --provider <id> [--fallback chain]  Create with provider
@@ -1506,6 +1507,14 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       default:
         help();
     }
+  } else if (command === "onboard") {
+    // New interactive onboarding wizard
+    const { onboardCommand } = await import("./commands/onboard/index.js");
+    await onboardCommand(process.argv.slice(3));
+  } else if (command === "configure") {
+    // Re-run onboarding wizard (alias for onboard)
+    const { onboardCommand } = await import("./commands/onboard/index.js");
+    await onboardCommand(process.argv.slice(3));
   } else {
     help();
   }

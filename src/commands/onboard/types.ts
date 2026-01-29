@@ -1,0 +1,87 @@
+/**
+ * Onboard wizard types
+ */
+
+export interface OnboardConfig {
+  workspace?: string;
+  provider?: {
+    primary?: string;
+    kimi?: { apiKey?: string; baseUrl?: string };
+    anthropic?: { apiKey?: string };
+    openai?: { apiKey?: string };
+  };
+  gateway?: {
+    port?: number;
+    bind?: "loopback" | "lan" | "all";
+    auth?: {
+      mode?: "token" | "none";
+      token?: string;
+    };
+  };
+  channels?: string[];
+  skills?: string[];
+  plugins?: string[];
+  wizard?: {
+    lastRunAt?: string;
+    lastRunVersion?: string;
+    lastRunCommand?: string;
+    lastRunMode?: string;
+  };
+}
+
+export interface OnboardOptions {
+  flow?: "quickstart" | "advanced";
+  workspace?: string;
+  reset?: boolean;
+  skipChannels?: boolean;
+  skipSkills?: boolean;
+  skipPlugins?: boolean;
+  skipDaemon?: boolean;
+  skipUi?: boolean;
+  acceptRisk?: boolean;
+  mode?: "local" | "remote";
+}
+
+export interface OnboardRuntime {
+  log: (message: string) => void;
+  error: (message: string) => void;
+  exit: (code: number) => void;
+}
+
+export interface OnboardContext {
+  opts: OnboardOptions;
+  runtime: OnboardRuntime;
+  baseConfig: OnboardConfig;
+  nextConfig: OnboardConfig;
+}
+
+export type OnboardStep = (
+  ctx: OnboardContext
+) => Promise<Partial<OnboardConfig> | void>;
+
+// Available model providers
+export const AVAILABLE_PROVIDERS = [
+  { id: "kimi", name: "Kimi (Moonshot AI)", models: ["kimi-k2", "kimi-k1.5"] },
+  { id: "anthropic", name: "Anthropic (Claude)", models: ["claude-sonnet-4", "claude-opus-4"] },
+  { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini"] },
+] as const;
+
+// Available channel plugins
+export const AVAILABLE_CHANNELS = [
+  { id: "discord", name: "Discord", description: "Discord bot integration", npm: "wopr-plugin-discord" },
+  { id: "p2p", name: "P2P Network", description: "Peer-to-peer messaging (built-in)", npm: null },
+] as const;
+
+// Available skills (from our skills system)
+export const AVAILABLE_SKILLS = [
+  { id: "web-search", name: "Web Search", description: "Search the web using Brave API" },
+  { id: "file-ops", name: "File Operations", description: "Read/write files in workspace" },
+  { id: "shell", name: "Shell Commands", description: "Execute shell commands" },
+  { id: "memory", name: "Memory", description: "Persistent memory and recall" },
+] as const;
+
+// Available plugins
+export const AVAILABLE_PLUGINS = [
+  { id: "webui", name: "Web UI", description: "Web interface (included)", npm: null },
+  { id: "discord", name: "Discord Plugin", description: "Discord bot integration", npm: "wopr-plugin-discord" },
+] as const;
