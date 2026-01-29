@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 /**
  * Provider Registry & Management System
  *

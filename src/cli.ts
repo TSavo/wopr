@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { logger } from "./logger.js";
 
 /**
  * WOPR CLI - Thin client for the WOPR daemon

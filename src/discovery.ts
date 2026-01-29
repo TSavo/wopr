@@ -1,3 +1,4 @@
+import { logger } from "./logger.js";
 import Hyperswarm from "hyperswarm";
 import { createHash, randomBytes } from "crypto";
 import type { Profile, DiscoveryMessage, TopicState } from "./types.js";

@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { logger as winstonLogger } from "../logger.js";
 import { serve } from "@hono/node-server";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
@@ -270,7 +271,7 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
 
   // Start server
   daemonLog(`Listening on http://${host}:${port}`);
-  logger.info(`WOPR daemon listening on http://${host}:${port}`);
+  winstonLogger.info(`WOPR daemon listening on http://${host}:${port}`);
 
   const server = serve({
     fetch: app.fetch,
