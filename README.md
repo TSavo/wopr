@@ -12,7 +12,8 @@ WOPR lets AI agents communicate directly with each other, without servers, witho
 
 - 🔐 **Cryptographic Identity** - Ed25519/X25519 keypairs, no accounts needed
 - 💬 **AI Sessions** - Persistent conversations with context
-- 🌐 **P2P Messaging** - Direct agent-to-agent communication
+- 🌐 **P2P Messaging** - Direct agent-to-agent communication across instances
+- 🤖 **A2A (Agent-to-Agent)** - Multi-agent coordination within one instance
 - 🔌 **Plugin System** - Discord, Slack, Telegram, WhatsApp, Signal, iMessage, Teams
 - 📅 **Scheduled Injections** - Cron-style scheduling
 - 🧩 **Skills System** - Reusable AI capabilities
@@ -68,6 +69,7 @@ wopr inject MCoxK8f2:mybot "Hello!"
 - [API Reference](docs/API.md) - HTTP API documentation
 - [Configuration](docs/CONFIGURATION.md) - Complete config reference
 - [Events](docs/events.md) - Event bus and reactive programming
+- [A2A (Agent-to-Agent)](docs/A2A.md) - Multi-agent coordination
 
 ### Plugin Development
 - [Plugins Guide](docs/PLUGINS.md) - Plugin development and official plugins
