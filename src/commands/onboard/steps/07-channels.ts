@@ -37,9 +37,18 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
       message: "Set up Slack integration?",
       initialValue: false,
     });
+    // Only ask about iMessage on macOS
+    let wantIMessage = false;
+    if (process.platform === "darwin") {
+      wantIMessage = await confirm({
+        message: "Set up iMessage integration (macOS only)?",
+        initialValue: false,
+      });
+    }
     selectedChannels = [];
     if (wantDiscord) selectedChannels.push("discord");
     if (wantSlack) selectedChannels.push("slack");
+    if (wantIMessage) selectedChannels.push("imessage");
   } else {
     // Advanced: full multiselect
     const options = AVAILABLE_CHANNELS.map(c => ({
@@ -132,6 +141,24 @@ export const channelsStep: OnboardStep = async (ctx: OnboardContext) => {
       "",
       pc.blue("Docs: https://github.com/TSavo/wopr-plugin-slack"),
     ].join("\n"), "Slack Setup");
+  }
+  
+  if (installed.includes("imessage")) {
+    await note([
+      "iMessage plugin installed!",
+      "",
+      pc.yellow("⚠️  macOS only - requires Full Disk Access"),
+      "",
+      "Next steps:",
+      "  1. Install imsg CLI: brew install steipete/tap/imsg",
+      "  2. Grant Full Disk Access to WOPR",
+      "  3. Configure with: wopr configure --plugin imessage",
+      "  4. Approve Automation permission when prompted",
+      "",
+      "Test with: imsg chats --limit 5",
+      "",
+      pc.blue("Docs: https://github.com/TSavo/wopr-plugin-imessage"),
+    ].join("\n"), "iMessage Setup");
   }
   
   return { channels: installed };

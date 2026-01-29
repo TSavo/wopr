@@ -70,6 +70,7 @@ export const AVAILABLE_PROVIDERS = [
 export const AVAILABLE_CHANNELS = [
   { id: "discord", name: "Discord", description: "Discord bot integration", npm: "wopr-plugin-discord" },
   { id: "slack", name: "Slack", description: "Slack workspace integration", npm: "wopr-plugin-slack" },
+  { id: "imessage", name: "iMessage (macOS)", description: "iMessage/SMS via imsg CLI (macOS only)", npm: "wopr-plugin-imessage" },
   { id: "p2p", name: "P2P Network", description: "Peer-to-peer messaging (built-in)", npm: null },
 ] as const;
 
