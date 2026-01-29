@@ -113,12 +113,12 @@ async function fetchGitHubSkills(
   const cacheDir = join(WOPR_HOME, ".cache", `${owner}-${repo}`);
 
   if (!existsSync(cacheDir)) {
-    console.log(`Caching ${owner}/${repo}...`);
+    logger.info(`Caching ${owner}/${repo}...`);
     mkdirSync(join(WOPR_HOME, ".cache"), { recursive: true });
     try {
       execSync(`git clone --depth 1 https://github.com/${owner}/${repo}.git "${cacheDir}"`, { stdio: "pipe" });
     } catch {
-      console.error(`Failed to clone ${owner}/${repo}`);
+      logger.error(`Failed to clone ${owner}/${repo}`);
       return [];
     }
   } else {

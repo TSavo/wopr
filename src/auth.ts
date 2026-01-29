@@ -181,7 +181,7 @@ export async function loadAuthWithRegistry(): Promise<AuthState | null> {
   try {
     await providerRegistry.loadCredentials();
   } catch (error) {
-    console.error("Failed to load provider credentials:", error);
+    logger.error("Failed to load provider credentials:", error);
   }
 
   // Load standard auth
@@ -239,7 +239,7 @@ export async function getAccessToken(): Promise<string | null> {
         auth.updatedAt = Date.now();
         saveAuth(auth);
       } catch (err) {
-        console.error("Failed to refresh token:", err);
+        logger.error("Failed to refresh token:", err);
         return null;
       }
     }
@@ -312,7 +312,7 @@ export async function storeProviderCredential(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
-    console.error(
+    logger.error(
       `Failed to store credential for provider ${providerId}: ${errorMessage}`
     );
     throw error;
@@ -333,7 +333,7 @@ export async function getProviderCredential(
   } catch (error) {
     const errorMessage =
       error instanceof Error ? error.message : String(error);
-    console.error(
+    logger.error(
       `Failed to retrieve credential for provider ${providerId}: ${errorMessage}`
     );
     return undefined;

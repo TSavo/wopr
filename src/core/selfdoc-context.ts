@@ -44,7 +44,7 @@ function readSelfDocFile(session: string, filename: string): string | null {
   try {
     return readFileSync(filePath, "utf-8");
   } catch (err) {
-    console.error(`[selfdoc-context] Failed to read ${filename}:`, err);
+    logger.error(`[selfdoc-context] Failed to read ${filename}:`, err);
     return null;
   }
 }
@@ -75,7 +75,7 @@ function readRecentMemoryFiles(session: string): Array<{date: string; content: s
       entries.push({ date, content });
     }
   } catch (err) {
-    console.error("[selfdoc-context] Failed to read memory files:", err);
+    logger.error("[selfdoc-context] Failed to read memory files:", err);
   }
   
   return entries;

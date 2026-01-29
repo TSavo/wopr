@@ -24,7 +24,7 @@ let connectionHandler: ConnectionHandler | null = null;
 
 // Callback for logging
 type LogFn = (msg: string) => void;
-let logFn: LogFn = console.log;
+let logFn: LogFn = logger.info;
 
 /**
  * Hash a topic string to get a Hyperswarm topic buffer.

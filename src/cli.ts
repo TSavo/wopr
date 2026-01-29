@@ -35,7 +35,7 @@ const client = new WoprClient();
 // Helper to check daemon is running
 async function requireDaemon(): Promise<void> {
   if (!(await client.isRunning())) {
-    console.error("Daemon not running. Start it: wopr daemon start");
+    logger.error("Daemon not running. Start it: wopr daemon start");
     process.exit(1);
   }
 }
@@ -57,7 +57,7 @@ function getDaemonPid(): number | null {
 // ==================== CLI Commands ====================
 
 function help(): void {
-  console.log(`
+  logger.info(`
 wopr - Self-sovereign AI session management
 
 Usage:
@@ -208,16 +208,16 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       case "list": {
         const providers = await client.getProviders();
         if (providers.length === 0) {
-          console.log("No providers registered.");
+          logger.info("No providers registered.");
         } else {
-          console.log("Registered providers:");
-          console.log("ID              | Name              | Available");
-          console.log("----------------|-------------------|----------");
+          logger.info("Registered providers:");
+          logger.info("ID              | Name              | Available");
+          logger.info("----------------|-------------------|----------");
           for (const p of providers) {
             const id = p.id.padEnd(15);
             const name = (p.name || "N/A").padEnd(19);
             const status = p.available ? "Yes" : "No";
-            console.log(`${id}| ${name}| ${status}`);
+            logger.info(`${id}| ${name}| ${status}`);
           }
         }
         break;
@@ -225,7 +225,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
 
       case "add": {
         if (!args[0]) {
-          console.error("Usage: wopr providers add <provider-id> [credential]");
+          logger.error("Usage: wopr providers add <provider-id> [credential]");
           process.exit(1);
         }
 
@@ -244,17 +244,17 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           rl.close();
 
           if (!credential) {
-            console.error("Credential required");
+            logger.error("Credential required");
             process.exit(1);
           }
         }
 
         try {
           await client.addProviderCredential(providerId, credential);
-          console.log(`Credential added for provider: ${providerId}`);
+          logger.info(`Credential added for provider: ${providerId}`);
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
-          console.error(`Failed to add credential: ${msg}`);
+          logger.error(`Failed to add credential: ${msg}`);
           process.exit(1);
         }
         break;
@@ -262,24 +262,24 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
 
       case "remove": {
         if (!args[0]) {
-          console.error("Usage: wopr providers remove <provider-id>");
+          logger.error("Usage: wopr providers remove <provider-id>");
           process.exit(1);
         }
 
         const providerId = args[0];
         try {
           await providerRegistry.removeCredential(providerId);
-          console.log(`Removed credential for provider: ${providerId}`);
+          logger.info(`Removed credential for provider: ${providerId}`);
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
-          console.error(`Failed to remove credential: ${msg}`);
+          logger.error(`Failed to remove credential: ${msg}`);
           process.exit(1);
         }
         break;
       }
 
       case "health-check": {
-        console.log("Checking provider health...");
+        logger.info("Checking provider health...");
         await client.checkProvidersHealth();
 
         const providers = await client.getProviders();
@@ -287,21 +287,21 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         const unhealthy = providers.filter((p: any) => !p.available);
 
         if (healthy.length > 0) {
-          console.log("\nHealthy:");
+          logger.info("\nHealthy:");
           for (const p of healthy) {
-            console.log(`  ${p.id}: OK`);
+            logger.info(`  ${p.id}: OK`);
           }
         }
 
         if (unhealthy.length > 0) {
-          console.log("\nUnhealthy:");
+          logger.info("\nUnhealthy:");
           for (const p of unhealthy) {
-            console.log(`  ${p.id}: Not available`);
+            logger.info(`  ${p.id}: Not available`);
           }
         }
 
         if (providers.length === 0) {
-          console.log("No providers registered.");
+          logger.info("No providers registered.");
         }
         break;
       }
@@ -314,7 +314,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     switch (subcommand) {
       case "create": {
         if (!args[0]) {
-          console.error("Usage: wopr session create <name> [context] [--provider <id>] [--fallback chain]");
+          logger.error("Usage: wopr session create <name> [context] [--provider <id>] [--fallback chain]");
           process.exit(1);
         }
 
@@ -335,20 +335,20 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           const providerFile = (await import("path")).join(SESSIONS_DIR, `${name}.provider.json`);
           (await import("fs/promises")).writeFile(providerFile, JSON.stringify(providerConfig, null, 2));
 
-          console.log(
+          logger.info(
             `Created session "${name}" with provider: ${flags.provider}${
               flags.fallback ? ` (fallback: ${flags.fallback})` : ""
             }`
           );
         } else {
-          console.log(`Created session "${name}"`);
+          logger.info(`Created session "${name}"`);
         }
         break;
       }
 
       case "set-provider": {
         if (!args[0] || !args[1]) {
-          console.error("Usage: wopr session set-provider <name> <provider-id> [--fallback chain]");
+          logger.error("Usage: wopr session set-provider <name> <provider-id> [--fallback chain]");
           process.exit(1);
         }
 
@@ -360,7 +360,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         try {
           await client.getSession(sessionName);
         } catch (error) {
-          console.error(`Session not found: ${sessionName}`);
+          logger.error(`Session not found: ${sessionName}`);
           process.exit(1);
         }
 
@@ -374,7 +374,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         const providerFile = (await import("path")).join(SESSIONS_DIR, `${sessionName}.provider.json`);
         await (await import("fs/promises")).writeFile(providerFile, JSON.stringify(providerConfig, null, 2));
 
-        console.log(
+        logger.info(
           `Updated session "${sessionName}" provider to: ${providerId}${
             flags.fallback ? ` (fallback: ${flags.fallback})` : ""
           }`
@@ -383,51 +383,51 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       }
       case "inject":
         if (!args[0] || !args[1]) {
-          console.error("Usage: wopr session inject <name> <message>");
+          logger.error("Usage: wopr session inject <name> <message>");
           process.exit(1);
         }
-        console.log(`[wopr] Injecting into session: ${args[0]}`);
+        logger.info(`[wopr] Injecting into session: ${args[0]}`);
         await client.inject(args[0], args.slice(1).join(" "), (msg) => {
           if (msg.type === "text") {
             process.stdout.write(msg.content);
           } else if (msg.type === "tool_use") {
-            console.log(`\n[tool] ${msg.toolName}`);
+            logger.info(`\n[tool] ${msg.toolName}`);
           } else if (msg.type === "complete") {
-            console.log(`\n[wopr] ${msg.content}`);
+            logger.info(`\n[wopr] ${msg.content}`);
           } else if (msg.type === "error") {
-            console.error(`\n[wopr] Error: ${msg.content}`);
+            logger.error(`\n[wopr] Error: ${msg.content}`);
           }
         });
         break;
       case "log":
         if (!args[0] || !args[1]) {
-          console.error("Usage: wopr session log <name> <message>");
+          logger.error("Usage: wopr session log <name> <message>");
           process.exit(1);
         }
         await client.logMessage(args[0], args.slice(1).join(" "));
-        console.log(`[wopr] Logged message to session: ${args[0]}`);
+        logger.info(`[wopr] Logged message to session: ${args[0]}`);
         break;
       case "list": {
         const sessions = await client.getSessions();
         if (sessions.length === 0) {
-          console.log("No sessions.");
+          logger.info("No sessions.");
         } else {
-          console.log("Sessions:");
+          logger.info("Sessions:");
           for (const s of sessions) {
-            console.log(`  ${s.name}${s.hasContext ? " (has context)" : ""}`);
+            logger.info(`  ${s.name}${s.hasContext ? " (has context)" : ""}`);
           }
         }
         break;
       }
       case "show": {
         if (!args[0]) {
-          console.error("Usage: wopr session show <name> [--limit N]");
+          logger.error("Usage: wopr session show <name> [--limit N]");
           process.exit(1);
         }
         const session = await client.getSession(args[0]);
-        console.log(`Session: ${session.name}`);
-        console.log(`ID: ${session.id || "(not started)"}`);
-        if (session.context) console.log(`\n--- Context ---\n${session.context}\n--- End ---`);
+        logger.info(`Session: ${session.name}`);
+        logger.info(`ID: ${session.id || "(not started)"}`);
+        if (session.context) logger.info(`\n--- Context ---\n${session.context}\n--- End ---`);
 
         // Show conversation history
         const limitIndex = args.indexOf("--limit");
@@ -435,7 +435,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         const history = await client.getConversationHistory(args[0], limit);
 
         if (history.entries.length > 0) {
-          console.log(`\n--- Conversation History (last ${history.count} entries) ---`);
+          logger.info(`\n--- Conversation History (last ${history.count} entries) ---`);
           for (const entry of history.entries) {
             const timestamp = new Date(entry.ts).toLocaleTimeString();
             const prefix = entry.type === "context" ? "[context]" :
@@ -445,26 +445,26 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
             const content = entry.content.length > 200 ?
               entry.content.substring(0, 200) + "..." :
               entry.content;
-            console.log(`${timestamp} ${prefix}: ${content}`);
+            logger.info(`${timestamp} ${prefix}: ${content}`);
           }
-          console.log(`--- End History ---`);
+          logger.info(`--- End History ---`);
         } else {
-          console.log("\nNo conversation history yet.");
+          logger.info("\nNo conversation history yet.");
         }
         break;
       }
       case "delete": {
         if (!args[0]) {
-          console.error("Usage: wopr session delete <name>");
+          logger.error("Usage: wopr session delete <name>");
           process.exit(1);
         }
         await client.deleteSession(args[0]);
-        console.log(`Deleted session "${args[0]}"`);
+        logger.info(`Deleted session "${args[0]}"`);
         break;
       }
       case "init-docs": {
         if (!args[0]) {
-          console.error("Usage: wopr session init-docs <name> [--agent-name <name>] [--user-name <name>]");
+          logger.error("Usage: wopr session init-docs <name> [--agent-name <name>] [--user-name <name>]");
           process.exit(1);
         }
         const sessionName = args[0];
@@ -476,14 +476,14 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         // Call daemon API to initialize self-doc files
         try {
           const result = await client.initSessionDocs(sessionName, { agentName, userName });
-          console.log(`Initialized self-documentation files for session "${sessionName}":`);
+          logger.info(`Initialized self-documentation files for session "${sessionName}":`);
           for (const file of result.created) {
-            console.log(`  - ${file}`);
+            logger.info(`  - ${file}`);
           }
-          console.log("\nEdit these files in ~/.wopr/sessions/" + sessionName + "/");
-          console.log("They will be automatically loaded into context on each injection.");
+          logger.info("\nEdit these files in ~/.wopr/sessions/" + sessionName + "/");
+          logger.info("They will be automatically loaded into context on each injection.");
         } catch (err: any) {
-          console.error(`Failed to init docs: ${err.message}`);
+          logger.error(`Failed to init docs: ${err.message}`);
           process.exit(1);
         }
         break;
@@ -499,28 +499,28 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         case "list": {
           const registries = await client.getSkillRegistries();
           if (registries.length === 0) {
-            console.log("No registries. Add: wopr skill registry add <name> <url>");
+            logger.info("No registries. Add: wopr skill registry add <name> <url>");
           } else {
-            console.log("Registries:");
-            for (const r of registries) console.log(`  ${r.name}: ${r.url}`);
+            logger.info("Registries:");
+            for (const r of registries) logger.info(`  ${r.name}: ${r.url}`);
           }
           break;
         }
         case "add":
           if (!args[1] || !args[2]) {
-            console.error("Usage: wopr skill registry add <name> <url>");
+            logger.error("Usage: wopr skill registry add <name> <url>");
             process.exit(1);
           }
           await client.addSkillRegistry(args[1], args[2]);
-          console.log(`Added registry: ${args[1]}`);
+          logger.info(`Added registry: ${args[1]}`);
           break;
         case "remove":
           if (!args[1]) {
-            console.error("Usage: wopr skill registry remove <name>");
+            logger.error("Usage: wopr skill registry remove <name>");
             process.exit(1);
           }
           await client.removeSkillRegistry(args[1]);
-          console.log(`Removed registry: ${args[1]}`);
+          logger.info(`Removed registry: ${args[1]}`);
           break;
         default:
           help();
@@ -530,63 +530,63 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         case "list": {
           const skills = await client.getSkills();
           if (skills.length === 0) {
-            console.log(`No skills. Add to ${SKILLS_DIR}/<name>/SKILL.md`);
+            logger.info(`No skills. Add to ${SKILLS_DIR}/<name>/SKILL.md`);
           } else {
-            console.log("Skills:");
-            for (const s of skills) console.log(`  ${s.name} - ${s.description}`);
+            logger.info("Skills:");
+            for (const s of skills) logger.info(`  ${s.name} - ${s.description}`);
           }
           break;
         }
         case "search": {
           if (!args[0]) {
-            console.error("Usage: wopr skill search <query>");
+            logger.error("Usage: wopr skill search <query>");
             process.exit(1);
           }
           const results = await client.searchSkills(args.join(" "));
           if (results.length === 0) {
-            console.log(`No skills found matching "${args.join(" ")}"`);
+            logger.info(`No skills found matching "${args.join(" ")}"`);
           } else {
-            console.log(`Found ${results.length} skill(s):`);
+            logger.info(`Found ${results.length} skill(s):`);
             for (const skill of results) {
-              console.log(`  ${skill.name} (${skill.registry})`);
-              console.log(`    ${skill.description}`);
-              console.log(`    wopr skill install ${skill.source}`);
+              logger.info(`  ${skill.name} (${skill.registry})`);
+              logger.info(`    ${skill.description}`);
+              logger.info(`    wopr skill install ${skill.source}`);
             }
           }
           break;
         }
         case "install": {
           if (!args[0]) {
-            console.error("Usage: wopr skill install <source> [name]");
+            logger.error("Usage: wopr skill install <source> [name]");
             process.exit(1);
           }
-          console.log(`Installing...`);
+          logger.info(`Installing...`);
           await client.installSkill(args[0], args[1]);
-          console.log(`Installed: ${args[1] || args[0]}`);
+          logger.info(`Installed: ${args[1] || args[0]}`);
           break;
         }
         case "create": {
           if (!args[0]) {
-            console.error("Usage: wopr skill create <name> [description]");
+            logger.error("Usage: wopr skill create <name> [description]");
             process.exit(1);
           }
           await client.createSkill(args[0], args.slice(1).join(" ") || undefined);
-          console.log(`Created: ${join(SKILLS_DIR, args[0], "SKILL.md")}`);
+          logger.info(`Created: ${join(SKILLS_DIR, args[0], "SKILL.md")}`);
           break;
         }
         case "remove": {
           if (!args[0]) {
-            console.error("Usage: wopr skill remove <name>");
+            logger.error("Usage: wopr skill remove <name>");
             process.exit(1);
           }
           await client.removeSkill(args[0]);
-          console.log(`Removed: ${args[0]}`);
+          logger.info(`Removed: ${args[0]}`);
           break;
         }
         case "cache":
           if (args[0] === "clear") {
             await client.clearSkillCache();
-            console.log("Cache cleared");
+            logger.info("Cache cleared");
           }
           break;
         default:
@@ -604,7 +604,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           return true;
         });
         if (filtered.length < 4) {
-          console.error("Usage: wopr cron add <name> <schedule> <session> <message>");
+          logger.error("Usage: wopr cron add <name> <schedule> <session> <message>");
           process.exit(1);
         }
         await client.addCron({
@@ -614,7 +614,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           message: filtered.slice(3).join(" "),
           once: flags.once || undefined,
         });
-        console.log(`Added cron: ${filtered[0]}`);
+        logger.info(`Added cron: ${filtered[0]}`);
         if (flags.now) {
           await client.inject(filtered[2], filtered.slice(3).join(" "), (msg) => {
             if (msg.type === "text") process.stdout.write(msg.content);
@@ -624,7 +624,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       }
       case "once": {
         if (args.length < 3) {
-          console.error("Usage: wopr cron once <time> <session> <message>");
+          logger.error("Usage: wopr cron once <time> <session> <message>");
           process.exit(1);
         }
         const runAt = parseTimeSpec(args[0]);
@@ -636,41 +636,41 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           once: true,
           runAt,
         });
-        console.log(`Scheduled for ${new Date(runAt).toLocaleString()}`);
+        logger.info(`Scheduled for ${new Date(runAt).toLocaleString()}`);
         break;
       }
       case "now":
         if (args.length < 2) {
-          console.error("Usage: wopr cron now <session> <message>");
+          logger.error("Usage: wopr cron now <session> <message>");
           process.exit(1);
         }
         await client.inject(args[0], args.slice(1).join(" "), (msg) => {
           if (msg.type === "text") process.stdout.write(msg.content);
-          else if (msg.type === "complete") console.log(`\n[wopr] ${msg.content}`);
+          else if (msg.type === "complete") logger.info(`\n[wopr] ${msg.content}`);
         });
         break;
       case "remove": {
         if (!args[0]) {
-          console.error("Usage: wopr cron remove <name>");
+          logger.error("Usage: wopr cron remove <name>");
           process.exit(1);
         }
         await client.removeCron(args[0]);
-        console.log(`Removed: ${args[0]}`);
+        logger.info(`Removed: ${args[0]}`);
         break;
       }
       case "list": {
         const crons = await client.getCrons();
         if (crons.length === 0) {
-          console.log("No crons.");
+          logger.info("No crons.");
         } else {
-          console.log("Crons:");
+          logger.info("Crons:");
           for (const c of crons) {
             if (c.runAt) {
-              console.log(`  ${c.name}: once @ ${new Date(c.runAt).toLocaleString()}`);
+              logger.info(`  ${c.name}: once @ ${new Date(c.runAt).toLocaleString()}`);
             } else {
-              console.log(`  ${c.name}: ${c.schedule}${c.once ? " (one-time)" : ""}`);
+              logger.info(`  ${c.name}: ${c.schedule}${c.once ? " (one-time)" : ""}`);
             }
-            console.log(`    -> ${c.session}: "${c.message}"`);
+            logger.info(`    -> ${c.session}: "${c.message}"`);
           }
         }
         break;
@@ -689,19 +689,19 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           // Get specific key
           const value = config.getValue(args[0]);
           if (value === undefined) {
-            console.error(`Config key "${args[0]}" not found`);
+            logger.error(`Config key "${args[0]}" not found`);
             process.exit(1);
           }
-          console.log(JSON.stringify(value, null, 2));
+          logger.info(JSON.stringify(value, null, 2));
         } else {
           // Show all config
-          console.log(JSON.stringify(config.get(), null, 2));
+          logger.info(JSON.stringify(config.get(), null, 2));
         }
         break;
       }
       case "set": {
         if (!args[0] || args[1] === undefined) {
-          console.error("Usage: wopr config set <key> <value>");
+          logger.error("Usage: wopr config set <key> <value>");
           process.exit(1);
         }
         const key = args[0];
@@ -716,13 +716,13 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
 
         config.setValue(key, value);
         await config.save();
-        console.log(`Set ${key} = ${JSON.stringify(value)}`);
+        logger.info(`Set ${key} = ${JSON.stringify(value)}`);
         break;
       }
       case "reset": {
         config.reset();
         await config.save();
-        console.log("Config reset to defaults");
+        logger.info("Config reset to defaults");
         break;
       }
       default:
@@ -733,7 +733,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       case "start": {
         const existing = getDaemonPid();
         if (existing) {
-          console.log(`Daemon already running (PID ${existing})`);
+          logger.info(`Daemon already running (PID ${existing})`);
           return;
         }
         const script = process.argv[1];
@@ -741,22 +741,22 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
           encoding: "utf-8",
           shell: "/bin/bash",
         });
-        console.log(`Daemon started (PID ${child.trim()})`);
+        logger.info(`Daemon started (PID ${child.trim()})`);
         break;
       }
       case "stop": {
         const pid = getDaemonPid();
         if (!pid) {
-          console.log("Daemon not running");
+          logger.info("Daemon not running");
           return;
         }
         process.kill(pid, "SIGTERM");
-        console.log(`Daemon stopped (PID ${pid})`);
+        logger.info(`Daemon stopped (PID ${pid})`);
         break;
       }
       case "status": {
         const pid = getDaemonPid();
-        console.log(pid ? `Daemon running (PID ${pid})` : "Daemon not running");
+        logger.info(pid ? `Daemon running (PID ${pid})` : "Daemon not running");
         break;
       }
       case "run":
@@ -766,9 +766,9 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         break;
       case "logs":
         if (existsSync(LOG_FILE)) {
-          console.log(readFileSync(LOG_FILE, "utf-8"));
+          logger.info(readFileSync(LOG_FILE, "utf-8"));
         } else {
-          console.log("No logs");
+          logger.info("No logs");
         }
         break;
       default:
@@ -780,42 +780,42 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       const auth = loadAuth();
 
       if (claudeCodeAuth) {
-        console.log("Auth: Claude Code OAuth (shared credentials)");
-        console.log("Source: ~/.claude/.credentials.json");
+        logger.info("Auth: Claude Code OAuth (shared credentials)");
+        logger.info("Source: ~/.claude/.credentials.json");
         if (claudeCodeAuth.expiresAt) {
           const exp = new Date(claudeCodeAuth.expiresAt);
           const now = Date.now();
           if (claudeCodeAuth.expiresAt > now) {
-            console.log(`Expires: ${exp.toLocaleString()}`);
+            logger.info(`Expires: ${exp.toLocaleString()}`);
           } else {
-            console.log(`Expired: ${exp.toLocaleString()} (will auto-refresh)`);
+            logger.info(`Expired: ${exp.toLocaleString()} (will auto-refresh)`);
           }
         }
       } else if (!auth || (!auth.apiKey && !auth.accessToken)) {
-        console.log("Not authenticated");
-        console.log("\nLogin with Claude Max/Pro:");
-        console.log("  wopr auth login");
-        console.log("\nOr use an API key:");
-        console.log("  wopr auth api-key <your-key>");
+        logger.info("Not authenticated");
+        logger.info("\nLogin with Claude Max/Pro:");
+        logger.info("  wopr auth login");
+        logger.info("\nOr use an API key:");
+        logger.info("  wopr auth api-key <your-key>");
       } else if (auth.type === "oauth") {
-        console.log("Auth: OAuth (Claude Max/Pro)");
-        if (auth.email) console.log(`Email: ${auth.email}`);
+        logger.info("Auth: OAuth (Claude Max/Pro)");
+        if (auth.email) logger.info(`Email: ${auth.email}`);
         if (auth.expiresAt) {
-          console.log(`Expires: ${new Date(auth.expiresAt).toLocaleString()}`);
+          logger.info(`Expires: ${new Date(auth.expiresAt).toLocaleString()}`);
         }
       } else if (auth.type === "api_key") {
-        console.log("Auth: API Key");
-        console.log(`Key: ${auth.apiKey?.substring(0, 12)}...`);
+        logger.info("Auth: API Key");
+        logger.info(`Key: ${auth.apiKey?.substring(0, 12)}...`);
       }
     } else if (subcommand === "login") {
       const pkce = generatePKCE();
       const redirectUri = "http://localhost:9876/callback";
       const authUrl = buildAuthUrl(pkce, redirectUri);
 
-      console.log("Opening browser for authentication...\n");
-      console.log("If browser doesn't open, visit:");
-      console.log(authUrl);
-      console.log("\nWaiting for authentication...");
+      logger.info("Opening browser for authentication...\n");
+      logger.info("If browser doesn't open, visit:");
+      logger.info(authUrl);
+      logger.info("\nWaiting for authentication...");
 
       const http = await import("http");
       const url = await import("url");
@@ -830,7 +830,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
             res.writeHead(400);
             res.end("Invalid state parameter");
             server.close();
-            console.error("Error: Invalid state parameter");
+            logger.error("Error: Invalid state parameter");
             process.exit(1);
           }
 
@@ -842,14 +842,14 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
             res.end("<html><body><h1>Success!</h1><p>You can close this window.</p></body></html>");
             server.close();
 
-            console.log("\nAuthenticated successfully!");
-            console.log("Your Claude Max/Pro subscription is now linked.");
+            logger.info("\nAuthenticated successfully!");
+            logger.info("Your Claude Max/Pro subscription is now linked.");
             process.exit(0);
           } catch (err: any) {
             res.writeHead(500);
             res.end(`Error: ${err.message}`);
             server.close();
-            console.error("Error:", err.message);
+            logger.error("Error:", err.message);
             process.exit(1);
           }
         }
@@ -861,20 +861,20 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       });
 
       setTimeout(() => {
-        console.error("\nTimeout waiting for authentication");
+        logger.error("\nTimeout waiting for authentication");
         server.close();
         process.exit(1);
       }, 5 * 60 * 1000);
     } else if (subcommand === "api-key") {
       if (!args[0]) {
-        console.error("Usage: wopr auth api-key <your-api-key>");
+        logger.error("Usage: wopr auth api-key <your-api-key>");
         process.exit(1);
       }
       saveApiKey(args[0]);
-      console.log("API key saved");
+      logger.info("API key saved");
     } else if (subcommand === "logout") {
       clearAuth();
-      console.log("Logged out");
+      logger.info("Logged out");
     } else {
       help();
     }
@@ -882,30 +882,30 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     await requireDaemon();
     if (subcommand === "init") {
       const identity = await client.initIdentity(args.includes("--force"));
-      console.log(`Identity created: ${shortKey(identity.publicKey)}`);
-      console.log(`Full: wopr://${identity.publicKey}`);
+      logger.info(`Identity created: ${shortKey(identity.publicKey)}`);
+      logger.info(`Full: wopr://${identity.publicKey}`);
     } else if (subcommand === "rotate") {
       const broadcast = args.includes("--broadcast");
       const result = await client.rotateIdentity(broadcast);
-      console.log(`Keys rotated!`);
-      console.log(`New ID: ${shortKey(result.newIdentity.publicKey)}`);
-      console.log(`Old ID: ${shortKey(result.oldPublicKey)} (valid for 7 days)`);
+      logger.info(`Keys rotated!`);
+      logger.info(`New ID: ${shortKey(result.newIdentity.publicKey)}`);
+      logger.info(`Old ID: ${shortKey(result.oldPublicKey)} (valid for 7 days)`);
       if (broadcast && result.notified) {
-        console.log(`\nNotified ${result.notified.length} peer(s)`);
+        logger.info(`\nNotified ${result.notified.length} peer(s)`);
       } else if (!broadcast) {
-        console.log("\nRun with --broadcast to notify peers of key change.");
+        logger.info("\nRun with --broadcast to notify peers of key change.");
       }
     } else if (!subcommand) {
       const identity = await client.getIdentity();
       if (!identity) {
-        console.log("No identity. Run: wopr id init");
+        logger.info("No identity. Run: wopr id init");
       } else {
-        console.log(`WOPR ID: ${shortKey(identity.publicKey)}`);
-        console.log(`Full: wopr://${identity.publicKey}`);
-        console.log(`Encrypt: ${shortKey(identity.encryptPub)}`);
+        logger.info(`WOPR ID: ${shortKey(identity.publicKey)}`);
+        logger.info(`Full: wopr://${identity.publicKey}`);
+        logger.info(`Encrypt: ${shortKey(identity.encryptPub)}`);
         if (identity.rotatedFrom) {
-          console.log(`Rotated from: ${shortKey(identity.rotatedFrom)}`);
-          console.log(`Rotated at: ${new Date(identity.rotatedAt).toLocaleString()}`);
+          logger.info(`Rotated from: ${shortKey(identity.rotatedFrom)}`);
+          logger.info(`Rotated at: ${new Date(identity.rotatedAt).toLocaleString()}`);
         }
       }
     } else {
@@ -916,7 +916,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     if (subcommand === "friend" && args[0] === "add") {
       const peerPubkey = args[1];
       if (!peerPubkey) {
-        console.error("Usage: wopr p2p friend add <peer-pubkey> [session...] [--token <token>]");
+        logger.error("Usage: wopr p2p friend add <peer-pubkey> [session...] [--token <token>]");
         process.exit(1);
       }
 
@@ -934,23 +934,23 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       const grantSessions = sessions.length > 0 ? sessions : ["*"];
       const invite = await client.createInvite(peerPubkey, grantSessions);
 
-      console.log(`Invite created for ${shortKey(peerPubkey)}`);
-      console.log(invite.token);
-      console.log(`Sessions: ${grantSessions.join(", ")}`);
+      logger.info(`Invite created for ${shortKey(peerPubkey)}`);
+      logger.info(invite.token);
+      logger.info(`Sessions: ${grantSessions.join(", ")}`);
 
       if (token) {
-        console.log("\nClaiming their invite (peer must be online)...");
+        logger.info("\nClaiming their invite (peer must be online)...");
         const result = await client.claimInvite(token);
         if (result.code === EXIT_OK) {
-          console.log(`Success! Added peer: ${shortKey(result.peerKey!)}`);
-          console.log(`Sessions: ${result.sessions?.join(", ")}`);
+          logger.info(`Success! Added peer: ${shortKey(result.peerKey!)}`);
+          logger.info(`Sessions: ${result.sessions?.join(", ")}`);
         } else {
-          console.error(`Failed to claim: ${result.message}`);
+          logger.error(`Failed to claim: ${result.message}`);
           process.exit(result.code);
         }
       } else {
-        console.log("\nTo complete the handshake, rerun with their token:");
-        console.log("  wopr p2p friend add <peer-pubkey> --token <their-token>");
+        logger.info("\nTo complete the handshake, rerun with their token:");
+        logger.info("  wopr p2p friend add <peer-pubkey> --token <their-token>");
       }
     } else {
       help();
@@ -959,29 +959,29 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     await requireDaemon();
     if (subcommand === "claim") {
       if (!args[0]) {
-        console.error("Usage: wopr invite claim <token>");
+        logger.error("Usage: wopr invite claim <token>");
         process.exit(1);
       }
-      console.log("Claiming token (peer must be online)...");
+      logger.info("Claiming token (peer must be online)...");
       const result = await client.claimInvite(args[0]);
       if (result.code === EXIT_OK) {
-        console.log(`Success! Added peer: ${shortKey(result.peerKey!)}`);
-        console.log(`Sessions: ${result.sessions?.join(", ")}`);
+        logger.info(`Success! Added peer: ${shortKey(result.peerKey!)}`);
+        logger.info(`Sessions: ${result.sessions?.join(", ")}`);
       } else {
-        console.error(`Failed: ${result.message}`);
+        logger.error(`Failed: ${result.message}`);
         process.exit(result.code);
       }
     } else if (subcommand) {
       const peerPubkey = subcommand;
       const sessions = args.length > 0 ? args : ["*"];
       const result = await client.createInvite(peerPubkey, sessions);
-      console.log(result.token);
-      console.log(`\nFor peer: ${shortKey(peerPubkey)}`);
-      console.log(`Sessions: ${sessions.join(", ")}`);
-      console.log(`\nThey claim with: wopr invite claim <token>`);
+      logger.info(result.token);
+      logger.info(`\nFor peer: ${shortKey(peerPubkey)}`);
+      logger.info(`Sessions: ${sessions.join(", ")}`);
+      logger.info(`\nThey claim with: wopr invite claim <token>`);
     } else {
-      console.error("Usage: wopr invite <peer-pubkey> <session>");
-      console.error("       wopr invite claim <token>");
+      logger.error("Usage: wopr invite <peer-pubkey> <session>");
+      logger.error("       wopr invite claim <token>");
       process.exit(1);
     }
   } else if (command === "access") {
@@ -989,40 +989,40 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     const grants = await client.getAccessGrants();
     const active = grants.filter((g: any) => !g.revoked);
     if (active.length === 0) {
-      console.log("No one has access. Create invite: wopr invite <peer-pubkey> <session>");
+      logger.info("No one has access. Create invite: wopr invite <peer-pubkey> <session>");
     } else {
-      console.log("Access grants:");
+      logger.info("Access grants:");
       for (const g of active) {
-        console.log(`  ${g.peerName || shortKey(g.peerKey)}`);
-        console.log(`    Sessions: ${g.sessions.join(", ")}`);
+        logger.info(`  ${g.peerName || shortKey(g.peerKey)}`);
+        logger.info(`    Sessions: ${g.sessions.join(", ")}`);
       }
     }
   } else if (command === "revoke") {
     await requireDaemon();
     if (!subcommand) {
-      console.error("Usage: wopr revoke <peer>");
+      logger.error("Usage: wopr revoke <peer>");
       process.exit(1);
     }
     await client.revokePeer(subcommand);
-    console.log(`Revoked: ${subcommand}`);
+    logger.info(`Revoked: ${subcommand}`);
   } else if (command === "peers") {
     await requireDaemon();
     if (subcommand === "name") {
       if (!args[0] || !args[1]) {
-        console.error("Usage: wopr peers name <id> <name>");
+        logger.error("Usage: wopr peers name <id> <name>");
         process.exit(1);
       }
       await client.namePeer(args[0], args.slice(1).join(" "));
-      console.log(`Named peer ${args[0]} as "${args.slice(1).join(" ")}"`);
+      logger.info(`Named peer ${args[0]} as "${args.slice(1).join(" ")}"`);
     } else if (!subcommand) {
       const peers = await client.getPeers();
       if (peers.length === 0) {
-        console.log("No peers. Claim an invite: wopr invite claim <token>");
+        logger.info("No peers. Claim an invite: wopr invite claim <token>");
       } else {
-        console.log("Peers:");
+        logger.info("Peers:");
         for (const p of peers) {
-          console.log(`  ${p.name || p.id}${p.encryptPub ? " (encrypted)" : ""}`);
-          console.log(`    Sessions: ${p.sessions.join(", ")}`);
+          logger.info(`  ${p.name || p.id}${p.encryptPub ? " (encrypted)" : ""}`);
+          logger.info(`    Sessions: ${p.sessions.join(", ")}`);
         }
       }
     } else {
@@ -1031,12 +1031,12 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
   } else if (command === "inject") {
     await requireDaemon();
     if (!subcommand || !args.length) {
-      console.error("Usage: wopr inject <peer>:<session> <message>");
+      logger.error("Usage: wopr inject <peer>:<session> <message>");
       process.exit(EXIT_INVALID);
     }
 
     if (!subcommand.includes(":")) {
-      console.error("Invalid target. Use: wopr inject <peer>:<session> <message>");
+      logger.error("Invalid target. Use: wopr inject <peer>:<session> <message>");
       process.exit(EXIT_INVALID);
     }
 
@@ -1045,9 +1045,9 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     const result = await client.injectPeer(peer, session, message);
 
     if (result.code === EXIT_OK) {
-      console.log("Delivered.");
+      logger.info("Delivered.");
     } else {
-      console.error(result.message);
+      logger.error(result.message);
     }
     process.exit(result.code);
   } else if (command === "plugin") {
@@ -1063,28 +1063,28 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         case "list": {
           const registries = await client.getPluginRegistries();
           if (registries.length === 0) {
-            console.log("No plugin registries.");
+            logger.info("No plugin registries.");
           } else {
-            console.log("Plugin registries:");
-            for (const r of registries) console.log(`  ${r.name}: ${r.url}`);
+            logger.info("Plugin registries:");
+            for (const r of registries) logger.info(`  ${r.name}: ${r.url}`);
           }
           break;
         }
         case "add":
           if (!args[1] || !args[2]) {
-            console.error("Usage: wopr plugin registry add <name> <url>");
+            logger.error("Usage: wopr plugin registry add <name> <url>");
             process.exit(1);
           }
           await client.addPluginRegistry(args[1], args[2]);
-          console.log(`Added registry: ${args[1]}`);
+          logger.info(`Added registry: ${args[1]}`);
           break;
         case "remove":
           if (!args[1]) {
-            console.error("Usage: wopr plugin registry remove <name>");
+            logger.error("Usage: wopr plugin registry remove <name>");
             process.exit(1);
           }
           await client.removePluginRegistry(args[1]);
-          console.log(`Removed registry: ${args[1]}`);
+          logger.info(`Removed registry: ${args[1]}`);
           break;
         default:
           help();
@@ -1094,71 +1094,71 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         case "list": {
           const plugins = await client.getPlugins();
           if (plugins.length === 0) {
-            console.log("No plugins installed. Install: wopr plugin install <source>");
+            logger.info("No plugins installed. Install: wopr plugin install <source>");
           } else {
-            console.log("Installed plugins:");
+            logger.info("Installed plugins:");
             for (const p of plugins) {
               const status = p.enabled ? "enabled" : "disabled";
-              console.log(`  ${p.name} v${p.version} (${p.source}, ${status})`);
-              if (p.description) console.log(`    ${p.description}`);
+              logger.info(`  ${p.name} v${p.version} (${p.source}, ${status})`);
+              if (p.description) logger.info(`    ${p.description}`);
             }
           }
           break;
         }
         case "install": {
           if (!args[0]) {
-            console.error("Usage: wopr plugin install <source>");
-            console.error("  npm:      wopr plugin install wopr-plugin-discord");
-            console.error("  npm:      wopr plugin install wopr-p2p");
-            console.error("  github:   wopr plugin install github:user/wopr-discord");
-            console.error("  local:    wopr plugin install ./my-plugin");
+            logger.error("Usage: wopr plugin install <source>");
+            logger.error("  npm:      wopr plugin install wopr-plugin-discord");
+            logger.error("  npm:      wopr plugin install wopr-p2p");
+            logger.error("  github:   wopr plugin install github:user/wopr-discord");
+            logger.error("  local:    wopr plugin install ./my-plugin");
             process.exit(1);
           }
           await client.installPlugin(args[0]);
-          console.log(`Installed`);
+          logger.info(`Installed`);
           break;
         }
         case "remove": {
           if (!args[0]) {
-            console.error("Usage: wopr plugin remove <name>");
+            logger.error("Usage: wopr plugin remove <name>");
             process.exit(1);
           }
           await client.removePlugin(args[0]);
-          console.log(`Removed: ${args[0]}`);
+          logger.info(`Removed: ${args[0]}`);
           break;
         }
         case "enable": {
           if (!args[0]) {
-            console.error("Usage: wopr plugin enable <name>");
+            logger.error("Usage: wopr plugin enable <name>");
             process.exit(1);
           }
           await client.enablePlugin(args[0]);
-          console.log(`Enabled: ${args[0]}`);
+          logger.info(`Enabled: ${args[0]}`);
           break;
         }
         case "disable": {
           if (!args[0]) {
-            console.error("Usage: wopr plugin disable <name>");
+            logger.error("Usage: wopr plugin disable <name>");
             process.exit(1);
           }
           await client.disablePlugin(args[0]);
-          console.log(`Disabled: ${args[0]}`);
+          logger.info(`Disabled: ${args[0]}`);
           break;
         }
         case "search": {
           if (!args[0]) {
-            console.error("Usage: wopr plugin search <query>");
+            logger.error("Usage: wopr plugin search <query>");
             process.exit(1);
           }
-          console.log(`Searching npm for wopr-plugin-${args[0]}...`);
+          logger.info(`Searching npm for wopr-plugin-${args[0]}...`);
           const results = await client.searchPlugins(args[0]);
           if (results.length === 0) {
-            console.log("No plugins found.");
+            logger.info("No plugins found.");
           } else {
-            console.log("Found plugins:");
+            logger.info("Found plugins:");
             for (const r of results) {
-              console.log(`  ${r.name} - ${r.description || ""}`);
-              console.log(`    wopr plugin install ${r.name}`);
+              logger.info(`  ${r.name} - ${r.description || ""}`);
+              logger.info(`    wopr plugin install ${r.name}`);
             }
           }
           break;
@@ -1172,32 +1172,32 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     switch (subcommand) {
       case "join": {
         if (!args[0]) {
-          console.error("Usage: wopr discover join <topic>");
+          logger.error("Usage: wopr discover join <topic>");
           process.exit(1);
         }
         await client.joinTopic(args[0]);
-        console.log(`Joined topic: ${args[0]}`);
-        console.log("Use 'wopr discover peers' to see discovered peers.");
+        logger.info(`Joined topic: ${args[0]}`);
+        logger.info("Use 'wopr discover peers' to see discovered peers.");
         break;
       }
       case "leave": {
         if (!args[0]) {
-          console.error("Usage: wopr discover leave <topic>");
+          logger.error("Usage: wopr discover leave <topic>");
           process.exit(1);
         }
         await client.leaveTopic(args[0]);
-        console.log(`Left topic: ${args[0]}`);
+        logger.info(`Left topic: ${args[0]}`);
         break;
       }
       case "topics": {
         const topics = await client.getTopics();
         if (topics.length === 0) {
-          console.log("Not in any topics. Join one: wopr discover join <topic>");
+          logger.info("Not in any topics. Join one: wopr discover join <topic>");
         } else {
-          console.log("Active topics:");
+          logger.info("Active topics:");
           for (const t of topics) {
             const peers = await client.getDiscoveredPeers(t);
-            console.log(`  ${t} (${peers.length} peers)`);
+            logger.info(`  ${t} (${peers.length} peers)`);
           }
         }
         break;
@@ -1206,16 +1206,16 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
         const topic = args[0];
         const peers = await client.getDiscoveredPeers(topic);
         if (peers.length === 0) {
-          console.log("No peers discovered yet.");
+          logger.info("No peers discovered yet.");
         } else {
-          console.log(`Discovered peers${topic ? ` in ${topic}` : ""}:`);
+          logger.info(`Discovered peers${topic ? ` in ${topic}` : ""}:`);
           for (const p of peers) {
-            console.log(`  ${p.id} (${shortKey(p.publicKey)})`);
+            logger.info(`  ${p.id} (${shortKey(p.publicKey)})`);
             if (p.content) {
-              console.log(`    ${JSON.stringify(p.content)}`);
+              logger.info(`    ${JSON.stringify(p.content)}`);
             }
             if (p.topics?.length > 0) {
-              console.log(`    Topics: ${p.topics.join(", ")}`);
+              logger.info(`    Topics: ${p.topics.join(", ")}`);
             }
           }
         }
@@ -1223,48 +1223,48 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       }
       case "connect": {
         if (!args[0]) {
-          console.error("Usage: wopr discover connect <peer-id>");
+          logger.error("Usage: wopr discover connect <peer-id>");
           process.exit(1);
         }
-        console.log(`Requesting connection with ${args[0]}...`);
+        logger.info(`Requesting connection with ${args[0]}...`);
         const result = await client.requestConnection(args[0]);
         if (result.code === EXIT_OK) {
-          console.log("Connected!");
+          logger.info("Connected!");
           if (result.sessions && result.sessions.length > 0) {
-            console.log(`Sessions: ${result.sessions.join(", ")}`);
+            logger.info(`Sessions: ${result.sessions.join(", ")}`);
           }
         } else {
-          console.error(`Failed: ${result.message}`);
+          logger.error(`Failed: ${result.message}`);
         }
         process.exit(result.code);
       }
       case "profile": {
         if (args[0] === "set") {
           if (!args[1]) {
-            console.error("Usage: wopr discover profile set <json>");
-            console.error("Example: wopr discover profile set '{\"name\":\"Alice\",\"about\":\"Coding assistant\"}'");
+            logger.error("Usage: wopr discover profile set <json>");
+            logger.error("Example: wopr discover profile set '{\"name\":\"Alice\",\"about\":\"Coding assistant\"}'");
             process.exit(1);
           }
           try {
             const content = JSON.parse(args.slice(1).join(" "));
             const profile = await client.setProfile(content);
-            console.log("Profile updated:");
-            console.log(`  ID: ${profile.id}`);
-            console.log(`  Content: ${JSON.stringify(profile.content)}`);
+            logger.info("Profile updated:");
+            logger.info(`  ID: ${profile.id}`);
+            logger.info(`  Content: ${JSON.stringify(profile.content)}`);
           } catch (err: any) {
-            console.error(`Invalid JSON: ${err.message}`);
+            logger.error(`Invalid JSON: ${err.message}`);
             process.exit(1);
           }
         } else {
           const profile = await client.getProfile();
           if (!profile) {
-            console.log("No profile set. Create one: wopr discover profile set <json>");
+            logger.info("No profile set. Create one: wopr discover profile set <json>");
           } else {
-            console.log("Current profile:");
-            console.log(`  ID: ${profile.id}`);
-            console.log(`  Content: ${JSON.stringify(profile.content, null, 2)}`);
-            console.log(`  Topics: ${profile.topics?.join(", ") || "(none)"}`);
-            console.log(`  Updated: ${new Date(profile.updated).toLocaleString()}`);
+            logger.info("Current profile:");
+            logger.info(`  ID: ${profile.id}`);
+            logger.info(`  Content: ${JSON.stringify(profile.content, null, 2)}`);
+            logger.info(`  Topics: ${profile.topics?.join(", ") || "(none)"}`);
+            logger.info(`  Updated: ${new Date(profile.updated).toLocaleString()}`);
           }
         }
         break;
@@ -1280,14 +1280,14 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       output: process.stdout,
     });
 
-    console.log("=== WOPR Configuration Wizard ===\n");
+    logger.info("=== WOPR Configuration Wizard ===\n");
 
     // Load existing config
     await config.load();
     const existing = config.get();
 
     // Daemon settings
-    console.log("Daemon Settings:");
+    logger.info("Daemon Settings:");
     const port = await rl.question(`  Port [${existing.daemon.port}]: `);
     if (port) config.setValue("daemon.port", parseInt(port) || existing.daemon.port);
 
@@ -1298,13 +1298,13 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     if (autoStart) config.setValue("daemon.autoStart", autoStart.toLowerCase() === "y");
 
     // Anthropic API Key
-    console.log("\nAnthropic:");
+    logger.info("\nAnthropic:");
     const hasKey = existing.anthropic.apiKey ? "(configured)" : "(not set)";
     const apiKey = await rl.question(`  API Key ${hasKey}: `);
     if (apiKey) config.setValue("anthropic.apiKey", apiKey);
 
     // OAuth
-    console.log("\nOAuth (for claude.ai login):");
+    logger.info("\nOAuth (for claude.ai login):");
     const hasOAuth = existing.oauth.clientId ? "(configured)" : "(not set)";
     const clientId = await rl.question(`  Client ID ${hasOAuth}: `);
     if (clientId) {
@@ -1316,7 +1316,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     }
 
     // Discord
-    console.log("\nDiscord Bot (optional):");
+    logger.info("\nDiscord Bot (optional):");
     const hasDiscord = existing.discord?.token ? "(configured)" : "(not set)";
     const discordToken = await rl.question(`  Bot Token ${hasDiscord}: `);
     if (discordToken) {
@@ -1326,7 +1326,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     }
 
     // Discovery
-    console.log("\nDiscovery:");
+    logger.info("\nDiscovery:");
     const topics = await rl.question(`  Auto-join topics (comma-separated) [${existing.discovery.topics.join(",")}]: `);
     if (topics) config.setValue("discovery.topics", topics.split(",").map(t => t.trim()));
 
@@ -1337,22 +1337,22 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     await config.save();
     rl.close();
 
-    console.log("\n✓ Configuration saved!");
-    console.log(`  Config file: ~/wopr/config.json`);
-    console.log("\nNext steps:");
-    console.log("  wopr daemon start    # Start the daemon");
-    console.log("  wopr session create  # Create a session");
+    logger.info("\n✓ Configuration saved!");
+    logger.info(`  Config file: ~/wopr/config.json`);
+    logger.info("\nNext steps:");
+    logger.info("  wopr daemon start    # Start the daemon");
+    logger.info("  wopr session create  # Create a session");
   } else if (command === "middleware") {
     await requireDaemon();
     switch (subcommand) {
       case "list": {
         const middlewares = await client.getMiddlewares();
         if (middlewares.length === 0) {
-          console.log("No middleware registered.");
+          logger.info("No middleware registered.");
         } else {
-          console.log("Middlewares:");
-          console.log("Name              | Priority | Enabled | Hooks");
-          console.log("------------------|----------|---------|-------");
+          logger.info("Middlewares:");
+          logger.info("Name              | Priority | Enabled | Hooks");
+          logger.info("------------------|----------|---------|-------");
           for (const m of middlewares) {
             const name = m.name.padEnd(17);
             const priority = m.priority.toString().padEnd(8);
@@ -1360,7 +1360,7 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
             const hooks = [];
             if (m.hasIncoming) hooks.push("in");
             if (m.hasOutgoing) hooks.push("out");
-            console.log(`${name}| ${priority}| ${enabled}| ${hooks.join(",") || "-"}`);
+            logger.info(`${name}| ${priority}| ${enabled}| ${hooks.join(",") || "-"}`);
           }
         }
         break;
@@ -1368,66 +1368,66 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       case "chain": {
         const chain = await client.getMiddlewareChain();
         if (chain.length === 0) {
-          console.log("No middleware in chain.");
+          logger.info("No middleware in chain.");
         } else {
-          console.log("Middleware chain (execution order):");
+          logger.info("Middleware chain (execution order):");
           for (let i = 0; i < chain.length; i++) {
             const m = chain[i];
             const status = m.enabled ? "✓" : "✗";
-            console.log(`  ${i + 1}. [${status}] ${m.name} (priority: ${m.priority})`);
+            logger.info(`  ${i + 1}. [${status}] ${m.name} (priority: ${m.priority})`);
           }
         }
         break;
       }
       case "show": {
         if (!args[0]) {
-          console.error("Usage: wopr middleware show <name>");
+          logger.error("Usage: wopr middleware show <name>");
           process.exit(1);
         }
         try {
           const m = await client.getMiddleware(args[0]);
-          console.log(`Middleware: ${m.name}`);
-          console.log(`  Priority: ${m.priority}`);
-          console.log(`  Enabled: ${m.enabled ? "yes" : "no"}`);
-          console.log(`  Incoming hook: ${m.hasIncoming ? "yes" : "no"}`);
-          console.log(`  Outgoing hook: ${m.hasOutgoing ? "yes" : "no"}`);
+          logger.info(`Middleware: ${m.name}`);
+          logger.info(`  Priority: ${m.priority}`);
+          logger.info(`  Enabled: ${m.enabled ? "yes" : "no"}`);
+          logger.info(`  Incoming hook: ${m.hasIncoming ? "yes" : "no"}`);
+          logger.info(`  Outgoing hook: ${m.hasOutgoing ? "yes" : "no"}`);
         } catch (err: any) {
-          console.error(`Middleware not found: ${args[0]}`);
+          logger.error(`Middleware not found: ${args[0]}`);
           process.exit(1);
         }
         break;
       }
       case "enable": {
         if (!args[0]) {
-          console.error("Usage: wopr middleware enable <name>");
+          logger.error("Usage: wopr middleware enable <name>");
           process.exit(1);
         }
         await client.enableMiddleware(args[0]);
-        console.log(`Enabled middleware: ${args[0]}`);
+        logger.info(`Enabled middleware: ${args[0]}`);
         break;
       }
       case "disable": {
         if (!args[0]) {
-          console.error("Usage: wopr middleware disable <name>");
+          logger.error("Usage: wopr middleware disable <name>");
           process.exit(1);
         }
         await client.disableMiddleware(args[0]);
-        console.log(`Disabled middleware: ${args[0]}`);
+        logger.info(`Disabled middleware: ${args[0]}`);
         break;
       }
       case "priority": {
         if (!args[0] || args[1] === undefined) {
-          console.error("Usage: wopr middleware priority <name> <priority>");
-          console.error("  Lower priority runs first (default: 100)");
+          logger.error("Usage: wopr middleware priority <name> <priority>");
+          logger.error("  Lower priority runs first (default: 100)");
           process.exit(1);
         }
         const priority = parseInt(args[1], 10);
         if (isNaN(priority)) {
-          console.error("Priority must be a number");
+          logger.error("Priority must be a number");
           process.exit(1);
         }
         await client.setMiddlewarePriority(args[0], priority);
-        console.log(`Set ${args[0]} priority to ${priority}`);
+        logger.info(`Set ${args[0]} priority to ${priority}`);
         break;
       }
       default:
@@ -1439,67 +1439,67 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       case "list": {
         const providers = await client.getContextProviders();
         if (providers.length === 0) {
-          console.log("No context providers registered.");
+          logger.info("No context providers registered.");
         } else {
-          console.log("Context providers:");
-          console.log("Name              | Priority | Enabled");
-          console.log("------------------|----------|--------");
+          logger.info("Context providers:");
+          logger.info("Name              | Priority | Enabled");
+          logger.info("------------------|----------|--------");
           for (const p of providers) {
             const name = p.name.padEnd(17);
             const priority = p.priority.toString().padEnd(8);
             const enabled = p.enabled ? "yes" : "no";
-            console.log(`${name}| ${priority}| ${enabled}`);
+            logger.info(`${name}| ${priority}| ${enabled}`);
           }
         }
         break;
       }
       case "show": {
         if (!args[0]) {
-          console.error("Usage: wopr context show <name>");
+          logger.error("Usage: wopr context show <name>");
           process.exit(1);
         }
         try {
           const p = await client.getContextProvider(args[0]);
-          console.log(`Context provider: ${p.name}`);
-          console.log(`  Priority: ${p.priority}`);
-          console.log(`  Enabled: ${p.enabled ? "yes" : "no"}`);
+          logger.info(`Context provider: ${p.name}`);
+          logger.info(`  Priority: ${p.priority}`);
+          logger.info(`  Enabled: ${p.enabled ? "yes" : "no"}`);
         } catch (err: any) {
-          console.error(`Context provider not found: ${args[0]}`);
+          logger.error(`Context provider not found: ${args[0]}`);
           process.exit(1);
         }
         break;
       }
       case "enable": {
         if (!args[0]) {
-          console.error("Usage: wopr context enable <name>");
+          logger.error("Usage: wopr context enable <name>");
           process.exit(1);
         }
         await client.enableContextProvider(args[0]);
-        console.log(`Enabled context provider: ${args[0]}`);
+        logger.info(`Enabled context provider: ${args[0]}`);
         break;
       }
       case "disable": {
         if (!args[0]) {
-          console.error("Usage: wopr context disable <name>");
+          logger.error("Usage: wopr context disable <name>");
           process.exit(1);
         }
         await client.disableContextProvider(args[0]);
-        console.log(`Disabled context provider: ${args[0]}`);
+        logger.info(`Disabled context provider: ${args[0]}`);
         break;
       }
       case "priority": {
         if (!args[0] || args[1] === undefined) {
-          console.error("Usage: wopr context priority <name> <priority>");
-          console.error("  Lower priority runs first (appears earlier in context)");
+          logger.error("Usage: wopr context priority <name> <priority>");
+          logger.error("  Lower priority runs first (appears earlier in context)");
           process.exit(1);
         }
         const priority = parseInt(args[1], 10);
         if (isNaN(priority)) {
-          console.error("Priority must be a number");
+          logger.error("Priority must be a number");
           process.exit(1);
         }
         await client.setContextProviderPriority(args[0], priority);
-        console.log(`Set ${args[0]} priority to ${priority}`);
+        logger.info(`Set ${args[0]} priority to ${priority}`);
         break;
       }
       default:

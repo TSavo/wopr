@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 /**
  * Core session management and injection with provider routing
  */
@@ -185,14 +186,14 @@ export async function inject(
   }
 
   if (!silent) {
-    console.log(`[wopr] Injecting into session: ${name}`);
+    logger.info(`[wopr] Injecting into session: ${name}`);
     if (existingSessionId) {
-      console.log(`[wopr] Resuming session: ${existingSessionId}`);
+      logger.info(`[wopr] Resuming session: ${existingSessionId}`);
     } else {
-      console.log(`[wopr] Creating new session`);
+      logger.info(`[wopr] Creating new session`);
     }
     if (messageImages.length > 0) {
-      console.log(`[wopr] Images: ${messageImages.length}`);
+      logger.info(`[wopr] Images: ${messageImages.length}`);
     }
   }
 
@@ -208,10 +209,10 @@ export async function inject(
   
   if (!silent) {
     if (assembled.sources.length > 0) {
-      console.log(`[wopr] Context sources: ${assembled.sources.join(", ")}`);
+      logger.info(`[wopr] Context sources: ${assembled.sources.join(", ")}`);
     }
     if (assembled.warnings.length > 0) {
-      assembled.warnings.forEach(w => console.warn(`[wopr] Warning: ${w}`));
+      assembled.warnings.forEach(w => logger.warn(`[wopr] Warning: ${w}`));
     }
   }
   
@@ -284,11 +285,11 @@ export async function inject(
     // Resolve provider with fallback chain
     resolvedProvider = await providerRegistry.resolveProvider(providerConfig);
     providerUsed = resolvedProvider.name;
-    if (!silent) console.log(`[wopr] Using provider: ${providerUsed}`);
+    if (!silent) logger.info(`[wopr] Using provider: ${providerUsed}`);
   } catch (err) {
     // If provider resolution fails, try fallback to Anthropic SDK directly
-    if (!silent) console.error(`[wopr] Provider resolution failed: ${err}`);
-    if (!silent) console.log(`[wopr] Falling back to direct Anthropic query`);
+    if (!silent) logger.error(`[wopr] Provider resolution failed: ${err}`);
+    if (!silent) logger.info(`[wopr] Falling back to direct Anthropic query`);
     resolvedProvider = null;
   }
 
@@ -318,27 +319,27 @@ export async function inject(
   }
 
   for await (const msg of q) {
-    console.log(`[inject] Got msg type: ${msg.type}`, JSON.stringify(msg).substring(0, 200));
+    logger.info(`[inject] Got msg type: ${msg.type}`, JSON.stringify(msg).substring(0, 200));
     switch (msg.type) {
       case "system":
         if (msg.subtype === "init") {
           sessionId = msg.session_id;
           saveSessionId(name, sessionId);
-          if (!silent) console.log(`[wopr] Session ID: ${sessionId}`);
+          if (!silent) logger.info(`[wopr] Session ID: ${sessionId}`);
         }
         break;
       case "assistant":
-        console.log(`[inject] Processing assistant msg, content blocks: ${msg.message?.content?.length || 0}`);
+        logger.info(`[inject] Processing assistant msg, content blocks: ${msg.message?.content?.length || 0}`);
         for (const block of msg.message.content) {
-          console.log(`[inject]   Block type: ${block.type}`);
+          logger.info(`[inject]   Block type: ${block.type}`);
           if (block.type === "text") {
             collected.push(block.text);
-            if (!silent) console.log(block.text);
+            if (!silent) logger.info(block.text);
             const streamMsg: StreamMessage = { type: "text", content: block.text };
             if (onStream) onStream(streamMsg);
             emitStream(name, from, streamMsg);
           } else if (block.type === "tool_use") {
-            if (!silent) console.log(`[tool] ${block.name}`);
+            if (!silent) logger.info(`[tool] ${block.name}`);
             const streamMsg: StreamMessage = { type: "tool_use", content: "", toolName: block.name };
             if (onStream) onStream(streamMsg);
             emitStream(name, from, streamMsg);
@@ -348,12 +349,12 @@ export async function inject(
       case "result":
         if (msg.subtype === "success") {
           cost = msg.total_cost_usd;
-          if (!silent) console.log(`\n[wopr] Complete (${providerUsed}). Cost: $${cost.toFixed(4)}`);
+          if (!silent) logger.info(`\n[wopr] Complete (${providerUsed}). Cost: $${cost.toFixed(4)}`);
           const streamMsg: StreamMessage = { type: "complete", content: `Cost: $${cost.toFixed(4)}` };
           if (onStream) onStream(streamMsg);
           emitStream(name, from, streamMsg);
         } else {
-          if (!silent) console.error(`[wopr] Error: ${msg.subtype}`);
+          if (!silent) logger.error(`[wopr] Error: ${msg.subtype}`);
           const streamMsg: StreamMessage = { type: "error", content: msg.subtype };
           if (onStream) onStream(streamMsg);
           emitStream(name, from, streamMsg);

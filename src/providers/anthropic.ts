@@ -84,7 +84,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; media
       mediaType: contentType,
     };
   } catch (error) {
-    console.error(`[anthropic] Failed to download image ${url}:`, error);
+    logger.error(`[anthropic] Failed to download image ${url}:`, error);
     return null;
   }
 }

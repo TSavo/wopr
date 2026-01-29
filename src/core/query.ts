@@ -46,7 +46,7 @@ export async function executeQuery(request: QueryRequest): Promise<ModelResponse
       throw new Error("No providers available. Configure at least one provider (anthropic, kimi, openai, etc.)");
     }
     config = { name: available[0].id };
-    console.log(`[Query] Auto-selected provider: ${available[0].id}`);
+    logger.info(`[Query] Auto-selected provider: ${available[0].id}`);
   }
 
   try {
@@ -86,7 +86,7 @@ export async function executeQuery(request: QueryRequest): Promise<ModelResponse
       }
     }
 
-    console.log(`[Query] Used provider: ${providerUsed} (${modelUsed})`);
+    logger.info(`[Query] Used provider: ${providerUsed} (${modelUsed})`);
 
     return {
       content: chunks.join(""),
@@ -96,7 +96,7 @@ export async function executeQuery(request: QueryRequest): Promise<ModelResponse
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error(`[Query] Failed: ${errorMsg}`);
+    logger.error(`[Query] Failed: ${errorMsg}`);
     throw error;
   }
 }
@@ -124,7 +124,7 @@ export async function listAvailableModels(): Promise<
         models,
       });
     } catch (error) {
-      console.warn(`Failed to list models for ${providerInfo.id}`);
+      logger.warn(`Failed to list models for ${providerInfo.id}`);
     }
   }
 

@@ -6,6 +6,7 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { WOPR_HOME, CONFIG_FILE } from "../paths.js";
 
+import { logger } from "../logger.js";
 export interface WoprConfig {
   daemon: {
     port: number;
@@ -65,7 +66,7 @@ export class ConfigManager {
       this.config = this.merge(DEFAULT_CONFIG, loaded);
     } catch (err: any) {
       if (err.code !== "ENOENT") {
-        console.error("Failed to load config:", err.message);
+        logger.error("Failed to load config:", err.message);
       }
       // Use defaults if file doesn't exist
       this.config = { ...DEFAULT_CONFIG };

@@ -1,3 +1,4 @@
+import { logger } from "../logger.js";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { join, resolve } from "path";
 import { execSync } from "child_process";
@@ -98,12 +99,12 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     // Install dependencies if package.json exists
     const pkgPath = join(pluginDir, "package.json");
     if (existsSync(pkgPath)) {
-      console.log(`[plugins] Installing dependencies for ${repo}...`);
+      logger.info(`[plugins] Installing dependencies for ${repo}...`);
       execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
       
       // Build TypeScript plugins if tsconfig.json exists
       if (existsSync(join(pluginDir, "tsconfig.json"))) {
-        console.log(`[plugins] Building TypeScript plugin...`);
+        logger.info(`[plugins] Building TypeScript plugin...`);
         execSync("npm run build", { cwd: pluginDir, stdio: "inherit" });
       }
     }
@@ -136,12 +137,12 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     // Install dependencies if package.json exists
     const pkgPath = join(pluginDir, "package.json");
     if (existsSync(pkgPath)) {
-      console.log(`[plugins] Installing dependencies for local plugin...`);
+      logger.info(`[plugins] Installing dependencies for local plugin...`);
       execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
       
       // Build TypeScript plugins if tsconfig.json exists
       if (existsSync(join(pluginDir, "tsconfig.json"))) {
-        console.log(`[plugins] Building TypeScript plugin...`);
+        logger.info(`[plugins] Building TypeScript plugin...`);
         execSync("npm run build", { cwd: pluginDir, stdio: "inherit" });
       }
     }
@@ -382,10 +383,10 @@ function createPluginContext(
     },
 
     registerProvider(provider: ModelProvider) {
-      console.log(`[plugins] Provider registration: ${provider.id} (${provider.name})`);
+      logger.info(`[plugins] Provider registration: ${provider.id} (${provider.name})`);
       providerPlugins.set(provider.id, provider);
       providerRegistry.register(provider);
-      console.log(`[plugins]   ✓ Provider ${provider.id} registered in registry`);
+      logger.info(`[plugins]   ✓ Provider ${provider.id} registered in registry`);
     },
 
     unregisterProvider(id: string) {
@@ -617,7 +618,7 @@ export async function applyIncomingMiddlewares(input: MiddlewareInput): Promise<
       if (result === null) return null;
       message = result;
     } catch (err) {
-      console.error(`[middleware] ${middleware.name} failed on incoming:`, err);
+      logger.error(`[middleware] ${middleware.name} failed on incoming:`, err);
       // Continue to next middleware or block? Let's continue for resilience
     }
   }
@@ -636,7 +637,7 @@ export async function applyOutgoingMiddlewares(output: MiddlewareOutput): Promis
       if (result === null) return null;
       response = result;
     } catch (err) {
-      console.error(`[middleware] ${middleware.name} failed on outgoing:`, err);
+      logger.error(`[middleware] ${middleware.name} failed on outgoing:`, err);
     }
   }
   return response;
@@ -649,17 +650,17 @@ export async function applyOutgoingMiddlewares(output: MiddlewareOutput): Promis
 function createPluginLogger(pluginName: string): PluginLogger {
   return {
     info: (message: string, ...args: any[]) => {
-      console.log(`[${pluginName}] ${message}`, ...args);
+      logger.info(`[${pluginName}] ${message}`, ...args);
     },
     warn: (message: string, ...args: any[]) => {
-      console.warn(`[${pluginName}] ${message}`, ...args);
+      logger.warn(`[${pluginName}] ${message}`, ...args);
     },
     error: (message: string, ...args: any[]) => {
-      console.error(`[${pluginName}] ${message}`, ...args);
+      logger.error(`[${pluginName}] ${message}`, ...args);
     },
     debug: (message: string, ...args: any[]) => {
       if (process.env.DEBUG) {
-        console.debug(`[${pluginName}] ${message}`, ...args);
+        logger.debug(`[${pluginName}] ${message}`, ...args);
       }
     },
   };
@@ -676,45 +677,45 @@ export async function loadAllPlugins(injectors: {
   getSessions: () => string[];
   getPeers: () => Peer[];
 }): Promise<void> {
-  console.log(`[plugins] loadAllPlugins starting...`);
-  console.log(`[plugins] WOPR_HOME: ${process.env.WOPR_HOME || "not set"}`);
+  logger.info(`[plugins] loadAllPlugins starting...`);
+  logger.info(`[plugins] WOPR_HOME: ${process.env.WOPR_HOME || "not set"}`);
   
   const installed = getInstalledPlugins();
-  console.log(`[plugins] Found ${installed.length} installed plugins`);
+  logger.info(`[plugins] Found ${installed.length} installed plugins`);
   
   for (const p of installed) {
-    console.log(`[plugins]  - ${p.name}: enabled=${p.enabled}, path=${p.path}`);
+    logger.info(`[plugins]  - ${p.name}: enabled=${p.enabled}, path=${p.path}`);
   }
   
   let loadedCount = 0;
   for (const plugin of installed) {
-    console.log(`[plugins] Processing ${plugin.name}...`);
+    logger.info(`[plugins] Processing ${plugin.name}...`);
     if (!plugin.enabled) {
-      console.log(`[plugins]   Skipping ${plugin.name} (disabled)`);
+      logger.info(`[plugins]   Skipping ${plugin.name} (disabled)`);
       continue;
     }
     
-    console.log(`[plugins]   Loading ${plugin.name} from ${plugin.path}...`);
+    logger.info(`[plugins]   Loading ${plugin.name} from ${plugin.path}...`);
     try {
       await loadPlugin(plugin, injectors);
       loadedCount++;
-      console.log(`[plugins]   ✓ Loaded: ${plugin.name}`);
+      logger.info(`[plugins]   ✓ Loaded: ${plugin.name}`);
     } catch (err: any) {
-      console.error(`[plugins]   ✗ Failed to load ${plugin.name}:`, err.message);
-      console.error(`[plugins]     Stack:`, err.stack?.substring(0, 200));
+      logger.error(`[plugins]   ✗ Failed to load ${plugin.name}:`, err.message);
+      logger.error(`[plugins]     Stack:`, err.stack?.substring(0, 200));
     }
   }
   
-  console.log(`[plugins] loadAllPlugins complete. Loaded ${loadedCount}/${installed.length} plugins`);
+  logger.info(`[plugins] loadAllPlugins complete. Loaded ${loadedCount}/${installed.length} plugins`);
 }
 
 export async function shutdownAllPlugins(): Promise<void> {
   for (const [name] of loadedPlugins) {
     try {
       await unloadPlugin(name);
-      console.log(`[plugins] Unloaded: ${name}`);
+      logger.info(`[plugins] Unloaded: ${name}`);
     } catch (err) {
-      console.error(`[plugins] Failed to unload ${name}:`, err);
+      logger.error(`[plugins] Failed to unload ${name}:`, err);
     }
   }
 }

@@ -194,7 +194,7 @@ const conversationHistoryProvider: ContextProvider = {
         }
       };
     } catch (err) {
-      console.error(`[context] Failed to get conversation history:`, err);
+      logger.error(`[context] Failed to get conversation history:`, err);
       return null;
     }
   }
@@ -232,7 +232,7 @@ const channelProvider: ContextProvider = {
         }
       };
     } catch (err) {
-      console.error(`[context] Failed to get channel context:`, err);
+      logger.error(`[context] Failed to get channel context:`, err);
       return null;
     }
   }
@@ -305,7 +305,7 @@ export async function assembleContext(
         sources.push(provider.name);
       }
     } catch (err) {
-      console.error(`[context] Provider ${provider.name} failed:`, err);
+      logger.error(`[context] Provider ${provider.name} failed:`, err);
     }
   }
   
@@ -394,5 +394,5 @@ export function initContextSystem(): void {
     // Self-doc provider is optional
   });
   
-  console.log("[context] Context system initialized with defaults");
+  logger.info("[context] Context system initialized with defaults");
 }

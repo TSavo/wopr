@@ -270,7 +270,7 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
 
   // Start server
   daemonLog(`Listening on http://${host}:${port}`);
-  console.log(`WOPR daemon listening on http://${host}:${port}`);
+  logger.info(`WOPR daemon listening on http://${host}:${port}`);
 
   const server = serve({
     fetch: app.fetch,

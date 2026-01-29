@@ -50,7 +50,7 @@ async function downloadImageAsBase64(url: string): Promise<{ data: string; media
       mediaType: contentType,
     };
   } catch (error) {
-    console.error(`[codex] Failed to download image ${url}:`, error);
+    logger.error(`[codex] Failed to download image ${url}:`, error);
     return null;
   }
 }
