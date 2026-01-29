@@ -166,14 +166,21 @@ const conversationHistoryProvider: ContextProvider = {
       const lastTrigger = getLastTriggerTimestamp(session);
       const entries = allEntries
         .filter(e => e.ts > lastTrigger)
-        .slice(-20); // Max 20 entries to prevent context explosion
+        .filter(e => e.from !== "system") // Exclude system/context messages
+        .filter(e => !e.content?.startsWith("Conversation since")) // Exclude context markers
+        .slice(-3); // Max 3 entries to keep context under 2MB limit
       
       if (entries.length === 0) return null;
       
-      // Format as conversation context
+      // Format as conversation context - truncate very long entries
+      const MAX_ENTRY_CHARS = 800; // Aggressive: 800 chars per entry max
       const formatted = entries.map(entry => {
         const prefix = entry.from === "WOPR" ? "Assistant" : entry.from;
-        return `${prefix}: ${entry.content}`;
+        let content = entry.content;
+        if (content.length > MAX_ENTRY_CHARS) {
+          content = content.slice(0, MAX_ENTRY_CHARS) + "\n[...truncated...]";
+        }
+        return `${prefix}: ${content}`;
       }).join("\n\n");
       
       return {
