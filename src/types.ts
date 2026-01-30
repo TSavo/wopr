@@ -653,6 +653,10 @@ export interface WOPRPluginContext {
   // Sessions
   getSessions(): string[];
 
+  // Cancel an in-progress injection for a session
+  // Returns true if there was an injection to cancel, false otherwise
+  cancelInject(session: string): boolean;
+
   // Events - when sessions receive injections (deprecated, use events API)
   on(event: "injection", handler: InjectionHandler): void;
   on(event: "stream", handler: StreamHandler): void;

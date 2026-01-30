@@ -25,7 +25,7 @@ import {
   PluginInjectOptions,
   HookOptions,
 } from "./types.js";
-import { logMessage as logMessageToSession } from "./core/sessions.js";
+import { logMessage as logMessageToSession, cancelInject as cancelSessionInject } from "./core/sessions.js";
 import {
   registerContextProvider as registerCtxProvider,
   unregisterContextProvider as unregisterCtxProvider,
@@ -336,6 +336,7 @@ function createPluginContext(
     logMessage: (session: string, message: string, options?: { from?: string; channel?: ChannelRef }) =>
       logMessageToSession(session, message, options),
     getSessions: injectors.getSessions,
+    cancelInject: (session: string) => cancelSessionInject(session),
 
     on(event: "injection" | "stream", handler: InjectionHandler | StreamHandler) {
       pluginEvents.on(event, handler);
