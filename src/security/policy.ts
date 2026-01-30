@@ -22,6 +22,8 @@ import {
   hasCapability,
   meetsTrustLevel,
   getToolCapability,
+  getSessionAccess,
+  matchesAnyAccessPattern,
 } from "./types.js";
 
 // ============================================================================
@@ -277,7 +279,7 @@ export function checkSessionAccess(
     };
   }
 
-  // Check blocked sessions
+  // Check blocked sessions (from trust level policy)
   if (policy.blockedSessions.includes(session)) {
     return {
       allowed: false,
@@ -285,25 +287,23 @@ export function checkSessionAccess(
     };
   }
 
-  // Check allowed sessions
+  // Check allowed sessions (from trust level policy)
   if (policy.allowedSessions !== "*") {
     if (!policy.allowedSessions.includes(session)) {
       return {
         allowed: false,
-        reason: `Session ${session} not in allowed list`,
+        reason: `Session ${session} not in allowed list for trust level`,
       };
     }
   }
 
-  // Check if untrusted can only access gateway sessions
-  if (source.trustLevel === "untrusted") {
-    const gateways = config.gateways?.sessions || [];
-    if (!gateways.includes(session)) {
-      return {
-        allowed: false,
-        reason: `Untrusted sources can only access gateway sessions`,
-      };
-    }
+  // Check session-level access rules (the new generic system)
+  const accessPatterns = getSessionAccess(config, session);
+  if (!matchesAnyAccessPattern(source, accessPatterns)) {
+    return {
+      allowed: false,
+      reason: `Source does not match access rules for session ${session}`,
+    };
   }
 
   return { allowed: true };
@@ -455,19 +455,38 @@ export function shouldLogSecurityEvent(allowed: boolean): boolean {
 }
 
 // ============================================================================
-// Gateway Helpers
+// Session Access Helpers
 // ============================================================================
 
 /**
- * Check if a session is a gateway
+ * Check if a session allows untrusted access
+ * (Replacement for the old isGatewaySession - sessions that allow untrusted
+ * are effectively "gateways" but that's now just a configuration pattern)
  */
-export function isGatewaySession(session: string): boolean {
+export function sessionAllowsUntrusted(session: string): boolean {
   const config = getSecurityConfig();
-  return config.gateways?.sessions?.includes(session) || false;
+  const accessPatterns = getSessionAccess(config, session);
+  // Check if any pattern would allow untrusted
+  return accessPatterns.some(
+    (p) => p === "*" || p === "trust:untrusted"
+  );
 }
 
 /**
- * Get gateway forward rules for a session
+ * @deprecated Use sessionAllowsUntrusted or check session access rules directly
+ */
+export function isGatewaySession(session: string): boolean {
+  const config = getSecurityConfig();
+  // Legacy: check old gateways config
+  if (config.gateways?.sessions?.includes(session)) {
+    return true;
+  }
+  // New: a "gateway" is just a session that allows untrusted access
+  return sessionAllowsUntrusted(session);
+}
+
+/**
+ * @deprecated Configure per-session capabilities instead
  */
 export function getGatewayRules(session: string): ResolvedPolicy["forwardRules"] {
   const config = getSecurityConfig();
@@ -475,41 +494,72 @@ export function getGatewayRules(session: string): ResolvedPolicy["forwardRules"]
 }
 
 /**
- * Check if a gateway can forward to a target session
+ * Check if a session can forward (inject) to another session
+ * This replaces the gateway-specific forwarding logic with generic capability checks
+ */
+export function canSessionForward(
+  sourceSession: string,
+  targetSession: string,
+  source: InjectionSource
+): PolicyCheckResult {
+  const config = getSecurityConfig();
+
+  // Check if source session has cross.inject capability
+  const sessionConfig = config.sessions?.[sourceSession];
+  const capabilities = sessionConfig?.capabilities || [];
+  if (!hasCapability(capabilities, "cross.inject")) {
+    return {
+      allowed: false,
+      reason: `Session ${sourceSession} does not have cross.inject capability`,
+    };
+  }
+
+  // Check if source can access target session (as a gateway-forwarded request)
+  const forwardSource: InjectionSource = {
+    ...source,
+    type: "gateway",
+    identity: {
+      ...source.identity,
+      gatewaySession: sourceSession,
+    },
+  };
+
+  return checkSessionAccess(forwardSource, targetSession);
+}
+
+/**
+ * @deprecated Use canSessionForward instead
  */
 export function canGatewayForward(
   gatewaySession: string,
   targetSession: string,
   action?: string
 ): PolicyCheckResult {
-  if (!isGatewaySession(gatewaySession)) {
-    return {
-      allowed: false,
-      reason: `${gatewaySession} is not a gateway session`,
-    };
+  const config = getSecurityConfig();
+
+  // Legacy: check old gateway rules
+  if (config.gateways?.forwardRules?.[gatewaySession]) {
+    const rules = config.gateways.forwardRules[gatewaySession];
+    if (!rules.allowForwardTo.includes(targetSession) && !rules.allowForwardTo.includes("*")) {
+      return {
+        allowed: false,
+        reason: `Gateway ${gatewaySession} cannot forward to ${targetSession}`,
+      };
+    }
+    if (action && rules.allowActions && !rules.allowActions.includes(action)) {
+      return {
+        allowed: false,
+        reason: `Action ${action} not allowed for gateway ${gatewaySession}`,
+      };
+    }
+    return { allowed: true };
   }
 
-  const rules = getGatewayRules(gatewaySession);
-  if (!rules) {
-    return {
-      allowed: false,
-      reason: `No forward rules defined for gateway ${gatewaySession}`,
-    };
-  }
-
-  if (!rules.allowForwardTo.includes(targetSession) && !rules.allowForwardTo.includes("*")) {
-    return {
-      allowed: false,
-      reason: `Gateway ${gatewaySession} cannot forward to ${targetSession}`,
-    };
-  }
-
-  if (action && rules.allowActions && !rules.allowActions.includes(action)) {
-    return {
-      allowed: false,
-      reason: `Action ${action} not allowed for gateway ${gatewaySession}`,
-    };
-  }
-
-  return { allowed: true };
+  // New: use generic session forwarding
+  const dummySource: InjectionSource = {
+    type: "gateway",
+    trustLevel: "semi-trusted",
+    identity: { gatewaySession: gatewaySession },
+  };
+  return canSessionForward(gatewaySession, targetSession, dummySource);
 }

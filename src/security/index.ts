@@ -38,6 +38,15 @@ export {
   type SecurityConfig,
   DEFAULT_SECURITY_CONFIG,
 
+  // Session config (new)
+  type AccessPattern,
+  type SessionConfig,
+  type HookConfig,
+  matchesAccessPattern,
+  matchesAnyAccessPattern,
+  getSessionConfig,
+  getSessionAccess,
+
   // Events
   type SecurityEventType,
   type SecurityEvent,
@@ -60,12 +69,29 @@ export {
   filterToolsByPolicy,
   isEnforcementEnabled,
   shouldLogSecurityEvent,
+  // New session access helpers
+  sessionAllowsUntrusted,
+  canSessionForward,
+  // Legacy (deprecated)
   isGatewaySession,
   getGatewayRules,
   canGatewayForward,
   type ResolvedPolicy,
   type PolicyCheckResult,
 } from "./policy.js";
+
+// Export hooks
+export {
+  type HookContext,
+  type PreInjectResult,
+  type PostInjectResult,
+  runPreInjectHooks,
+  runPostInjectHooks,
+  addSourceMetadata,
+  auditLogHook,
+  createHookContext,
+  processInjection,
+} from "./hooks.js";
 
 // Export context functions
 export {

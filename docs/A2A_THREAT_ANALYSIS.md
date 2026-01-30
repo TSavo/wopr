@@ -6,13 +6,25 @@ Critical analysis of security risks in the Agent-to-Agent (A2A) MCP system.
 
 ## Executive Summary
 
-The A2A security model uses a **gateway-centric architecture** where untrusted sources (P2P peers, discovery) can ONLY inject into designated gateway sessions. This provides strong isolation by design.
+The A2A security model uses **composable primitives** for access control:
 
-**Primary Protection**: Gateway routing enforcement
-```
-Untrusted P2P Peer → BLOCKED from direct session access
-                   → Can ONLY inject to gateway sessions
-                   → Gateway decides what to forward
+1. **Access Rules** - Per-session patterns specifying who can inject
+2. **Capabilities** - What actions a session can perform
+3. **Hooks** - Transform, tag, or block injections at runtime
+
+**Primary Protection**: Per-session access rules
+
+```yaml
+# Example: session config in security.json
+sessions:
+  intake:
+    access: ["*"]                          # Anyone can reach this
+    capabilities: ["inject", "cross.inject"]
+  code-executor:
+    access: ["trust:trusted", "session:intake"]  # Only trusted or intake
+    capabilities: ["inject", "inject.exec"]
+  private:
+    access: ["trust:owner"]                # Owner only
 ```
 
 **Defense in Depth**: A2A tools have additional security checks for:
@@ -24,12 +36,25 @@ Untrusted P2P Peer → BLOCKED from direct session access
 ### Security Model Enforcement
 
 ```typescript
-// policy.ts - Untrusted sources BLOCKED from non-gateway sessions
-if (source.trustLevel === "untrusted") {
-  const gateways = config.gateways?.sessions || [];
-  if (!gateways.includes(session)) {
-    return { allowed: false, reason: "Untrusted sources can only access gateway sessions" };
-  }
+// policy.ts - Generic access pattern matching
+const accessPatterns = getSessionAccess(config, session);
+if (!matchesAnyAccessPattern(source, accessPatterns)) {
+  return { allowed: false, reason: `Source does not match access rules for session` };
+}
+```
+
+### Hooks System
+
+Hooks provide composable interception points:
+
+```typescript
+// pre-inject hook can transform message, add metadata, or block
+const result = await processInjection(message, source, targetSession, {
+  addMetadata: true  // Adds "[From: source | Trust: level]" header
+});
+
+if (!result.allowed) {
+  // Blocked by hook
 }
 ```
 
@@ -46,33 +71,54 @@ if (source.trustLevel === "untrusted") {
 
 ## Threat Model
 
-### Trust Levels and Access
+### Access Pattern Types
 
-| Trust Level | Can Access | Example Sources |
-|-------------|------------|-----------------|
-| `owner` | All sessions | CLI, daemon, internal |
-| `trusted` | Granted sessions | Explicit P2P grants |
-| `semi-trusted` | Limited sessions | Gateway-forwarded, plugins |
-| `untrusted` | **Gateway sessions ONLY** | P2P discovery, unknown peers |
+| Pattern | Matches | Example |
+|---------|---------|---------|
+| `*` | Anyone | Public intake session |
+| `trust:owner` | Owner only | Private/admin sessions |
+| `trust:trusted` | Trusted or higher | Internal sessions |
+| `trust:semi-trusted` | Semi-trusted or higher | API-accessible sessions |
+| `trust:untrusted` | Any trust level | Public-facing sessions |
+| `session:<name>` | Specific session | Cross-session forwarding |
+| `p2p:<publicKey>` | Specific P2P peer | Whitelisted peers |
+| `type:<sourceType>` | By source type | `type:cli`, `type:plugin` |
 
-### Attack Surface by Trust Level
+### Trust Levels
 
-**Untrusted (P2P Discovery)**:
-- ✗ Cannot directly access ANY privileged session
-- ✗ Cannot call A2A tools on arbitrary sessions
-- ✓ Can only send messages to gateway
-- ✓ Gateway AI decides whether to act on request
+| Trust Level | Default Access | Example Sources |
+|-------------|----------------|-----------------|
+| `owner` | `["trust:owner"]` matches | CLI, daemon, internal |
+| `trusted` | `["trust:trusted"]` matches | Explicit P2P grants |
+| `semi-trusted` | `["trust:semi-trusted"]` matches | Forwarded, plugins |
+| `untrusted` | Only `["*"]` or `["trust:untrusted"]` matches | P2P discovery |
 
-**Semi-Trusted (Gateway)**:
-- ✓ Can forward to configured sessions
-- ✓ Has `cross.inject` capability
-- ✗ Config values are redacted
-- ✗ Limited by forward rules
+### Example Configurations
 
-**Trusted/Owner**:
-- ✓ Full session access
-- ✓ All A2A tools available
-- Defense-in-depth checks still apply
+**"Gateway" Pattern** (public intake that forwards):
+```yaml
+sessions:
+  intake:
+    access: ["trust:untrusted"]  # Anyone can reach
+    capabilities: ["inject", "cross.inject"]
+    prompt: "You evaluate external requests for safety..."
+```
+
+**Isolated Session** (only owner):
+```yaml
+sessions:
+  admin:
+    access: ["trust:owner"]
+    capabilities: ["*"]
+```
+
+**Cross-Session Access** (specific session can forward):
+```yaml
+sessions:
+  worker:
+    access: ["trust:trusted", "session:intake"]
+    capabilities: ["inject", "inject.exec"]
+```
 
 ---
 

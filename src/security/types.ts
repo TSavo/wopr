@@ -378,6 +378,56 @@ export interface SecurityPolicy {
 }
 
 /**
+ * Access rule pattern types:
+ * - "*" - anyone can access
+ * - "trust:owner" - owner trust level only
+ * - "trust:trusted" - trusted or higher
+ * - "trust:semi-trusted" - semi-trusted or higher
+ * - "trust:untrusted" - any trust level
+ * - "session:<name>" - only from specific session
+ * - "p2p:<publicKey>" - specific P2P peer
+ * - "type:<sourceType>" - by source type (cli, daemon, p2p, etc.)
+ */
+export type AccessPattern = string;
+
+/**
+ * Per-session configuration
+ */
+export interface SessionConfig {
+  /** Access rules - who can inject into this session */
+  access?: AccessPattern[];
+
+  /** Capabilities for code running in this session */
+  capabilities?: Capability[];
+
+  /** System prompt for the AI (security context) */
+  prompt?: string;
+
+  /** Sandbox configuration override */
+  sandbox?: Partial<SandboxConfig>;
+}
+
+/**
+ * Hook configuration
+ */
+export interface HookConfig {
+  /** Hook name */
+  name: string;
+
+  /** Hook type */
+  type: "pre-inject" | "post-inject" | "session-start" | "session-end";
+
+  /** Shell command to run (receives JSON on stdin, returns JSON on stdout) */
+  command?: string;
+
+  /** Or inline JavaScript (runs in sandbox) */
+  script?: string;
+
+  /** Enable/disable */
+  enabled: boolean;
+}
+
+/**
  * Global security configuration
  */
 export interface SecurityConfig {
@@ -389,6 +439,12 @@ export interface SecurityConfig {
 
   /** Policies by trust level */
   trustLevels?: Partial<Record<TrustLevel, SecurityPolicy>>;
+
+  /** Per-session configuration */
+  sessions?: Record<string, SessionConfig>;
+
+  /** Default session access (if not specified per-session) */
+  defaultAccess?: AccessPattern[];
 
   /** P2P-specific settings */
   p2p?: {
@@ -405,7 +461,7 @@ export interface SecurityConfig {
     maxPayloadSize?: number;
   };
 
-  /** Gateway configuration */
+  /** @deprecated Use sessions config instead */
   gateways?: {
     /** Sessions that act as gateways */
     sessions: string[];
@@ -421,6 +477,9 @@ export interface SecurityConfig {
       }
     >;
   };
+
+  /** Injection hooks */
+  hooks?: HookConfig[];
 
   /** Audit logging */
   audit?: {
@@ -470,12 +529,18 @@ export const DEFAULT_SECURITY_CONFIG: SecurityConfig = {
       tools: { deny: ["*"] }, // No tools for untrusted
     },
   },
+  // Default: only trusted and above can access sessions
+  defaultAccess: ["trust:trusted"],
+  // Per-session config (empty by default, user configures)
+  sessions: {},
   p2p: {
     discoveryTrust: "untrusted",
     autoAccept: false,
     keyRotationGraceHours: 24,
     maxPayloadSize: 1024 * 1024, // 1MB
   },
+  // Hooks (empty by default, user configures)
+  hooks: [],
   audit: {
     enabled: true,
     logSuccess: false,
@@ -591,4 +656,109 @@ export const TOOL_CAPABILITY_MAP: Record<string, Capability> = {
  */
 export function getToolCapability(toolName: string): Capability | undefined {
   return TOOL_CAPABILITY_MAP[toolName];
+}
+
+// ============================================================================
+// Access Pattern Matching
+// ============================================================================
+
+/**
+ * Check if an injection source matches an access pattern
+ *
+ * Pattern types:
+ * - "*" - matches anyone
+ * - "trust:owner" - matches owner trust level
+ * - "trust:trusted" - matches trusted or higher
+ * - "trust:semi-trusted" - matches semi-trusted or higher
+ * - "trust:untrusted" - matches any trust level
+ * - "session:<name>" - matches injection from specific session
+ * - "p2p:<publicKey>" - matches specific P2P peer
+ * - "type:<sourceType>" - matches by source type
+ */
+export function matchesAccessPattern(
+  source: InjectionSource,
+  pattern: AccessPattern
+): boolean {
+  // Wildcard matches everything
+  if (pattern === "*") {
+    return true;
+  }
+
+  // Trust level patterns
+  if (pattern.startsWith("trust:")) {
+    const requiredTrust = pattern.slice(6) as TrustLevel;
+    // "trust:untrusted" means anyone can access (lowest bar)
+    // "trust:owner" means only owner can access (highest bar)
+    return meetsTrustLevel(source.trustLevel, requiredTrust);
+  }
+
+  // Session patterns (for cross-session injection)
+  if (pattern.startsWith("session:")) {
+    const requiredSession = pattern.slice(8);
+    return source.identity?.gatewaySession === requiredSession;
+  }
+
+  // P2P peer patterns
+  if (pattern.startsWith("p2p:")) {
+    const requiredKey = pattern.slice(4);
+    return source.identity?.publicKey === requiredKey;
+  }
+
+  // Source type patterns
+  if (pattern.startsWith("type:")) {
+    const requiredType = pattern.slice(5);
+    return source.type === requiredType;
+  }
+
+  // Unknown pattern - deny by default
+  return false;
+}
+
+/**
+ * Check if an injection source matches any of the access patterns
+ */
+export function matchesAnyAccessPattern(
+  source: InjectionSource,
+  patterns: AccessPattern[]
+): boolean {
+  return patterns.some((pattern) => matchesAccessPattern(source, pattern));
+}
+
+/**
+ * Get the session configuration for a session
+ */
+export function getSessionConfig(
+  config: SecurityConfig,
+  sessionName: string
+): SessionConfig | undefined {
+  return config.sessions?.[sessionName];
+}
+
+/**
+ * Get the effective access patterns for a session
+ */
+export function getSessionAccess(
+  config: SecurityConfig,
+  sessionName: string
+): AccessPattern[] {
+  const sessionConfig = getSessionConfig(config, sessionName);
+
+  // Session-specific access rules take precedence
+  if (sessionConfig?.access) {
+    return sessionConfig.access;
+  }
+
+  // Fall back to default access
+  if (config.defaultAccess) {
+    return config.defaultAccess;
+  }
+
+  // Legacy: check if this is in the old gateways config
+  if (config.gateways?.sessions?.includes(sessionName)) {
+    // Old gateway sessions were accessible by untrusted
+    return ["trust:untrusted"];
+  }
+
+  // Default: only trusted and above can access
+  return ["trust:trusted"];
 }
