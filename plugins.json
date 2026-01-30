@@ -1,0 +1,29 @@
+[
+  {
+    "name": "wopr-plugin-voice-cli",
+    "version": "1.0.0",
+    "description": "CLI commands for voice transcription and synthesis",
+    "source": "local",
+    "path": "/home/tsavo/wopr-project/plugins/wopr-plugin-voice-cli",
+    "enabled": true,
+    "installedAt": 1738184400000
+  },
+  {
+    "name": "wopr-plugin-voice-piper-tts",
+    "version": "1.0.0",
+    "description": "Piper TTS voice synthesis",
+    "source": "local",
+    "path": "/home/tsavo/wopr-project/plugins/wopr-plugin-voice-piper-tts",
+    "enabled": true,
+    "installedAt": 1738184400000
+  },
+  {
+    "name": "wopr-plugin-voice-whisper-local",
+    "version": "1.0.0",
+    "description": "Whisper local STT transcription",
+    "source": "local",
+    "path": "/home/tsavo/wopr-project/plugins/wopr-plugin-voice-whisper-local",
+    "enabled": true,
+    "installedAt": 1738184400000
+  }
+]

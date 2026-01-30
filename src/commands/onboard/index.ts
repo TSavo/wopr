@@ -15,6 +15,7 @@ import { flowStep } from "./steps/04-flow.js";
 import { workspaceStep } from "./steps/05-workspace.js";
 import { providersStep } from "./steps/06-providers.js";
 import { channelsStep } from "./steps/07-channels.js";
+import { voiceStep } from "./steps/07b-voice.js";
 import { skillsStep } from "./steps/08-skills.js";
 import { daemonStep } from "./steps/09-daemon.js";
 import { finalizeStep } from "./steps/10-finalize.js";
@@ -27,6 +28,7 @@ const steps = [
   workspaceStep,
   providersStep,
   channelsStep,
+  voiceStep,  // Voice setup after channels
   skillsStep,
   daemonStep,
   finalizeStep,

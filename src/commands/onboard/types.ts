@@ -21,6 +21,7 @@ export interface OnboardConfig {
   channels?: string[];
   skills?: string[];
   plugins?: string[];
+  voicePlugins?: string[];  // Installed voice plugins (STT, TTS, channels)
   wizard?: {
     lastRunAt?: string;
     lastRunVersion?: string;
@@ -92,3 +93,22 @@ export const AVAILABLE_PLUGINS = [
   { id: "webui", name: "Web UI", description: "Web interface (included)", npm: null },
   { id: "discord", name: "Discord Plugin", description: "Discord bot integration", npm: "wopr-plugin-discord" },
 ] as const;
+
+// Available voice plugins (STT and TTS)
+export const AVAILABLE_VOICE_PLUGINS = {
+  stt: [
+    { id: "whisper-local", name: "Whisper (Local)", description: "Local STT via whisper.cpp (no API key)", npm: "wopr-plugin-voice-whisper-local", local: true },
+    { id: "deepgram", name: "Deepgram", description: "Cloud STT with streaming (DEEPGRAM_API_KEY)", npm: "wopr-plugin-voice-deepgram-stt", local: false, env: "DEEPGRAM_API_KEY" },
+  ],
+  tts: [
+    { id: "piper-local", name: "Piper (Local)", description: "Local TTS via Docker (no API key)", npm: "wopr-plugin-voice-piper-tts", local: true },
+    { id: "openai-tts", name: "OpenAI TTS", description: "Cloud TTS via OpenAI (OPENAI_API_KEY)", npm: "wopr-plugin-voice-openai-tts", local: false, env: "OPENAI_API_KEY" },
+    { id: "elevenlabs", name: "ElevenLabs", description: "Cloud TTS with voice cloning (ELEVENLABS_API_KEY)", npm: "wopr-plugin-voice-elevenlabs-tts", local: false, env: "ELEVENLABS_API_KEY" },
+  ],
+  channels: [
+    { id: "discord-voice", name: "Discord Voice", description: "Discord voice channel integration", npm: "wopr-plugin-channel-discord-voice" },
+  ],
+  cli: [
+    { id: "voice-cli", name: "Voice CLI", description: "CLI commands (wopr voice transcribe/synthesize)", npm: "wopr-plugin-voice-cli" },
+  ],
+} as const;

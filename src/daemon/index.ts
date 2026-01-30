@@ -34,8 +34,8 @@ import type { StreamCallback } from "../types.js";
 // Provider registry imports
 import { providerRegistry } from "../core/providers.js";
 
-const DEFAULT_PORT = 7437;
-const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = parseInt(process.env.WOPR_DAEMON_PORT || "7437");
+const DEFAULT_HOST = process.env.WOPR_DAEMON_HOST || "127.0.0.1";
 
 export interface DaemonConfig {
   port?: number;

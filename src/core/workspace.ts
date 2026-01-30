@@ -7,6 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { logger } from "../logger.js";
+import { GLOBAL_IDENTITY_DIR } from "../paths.js";
 
 export interface BootstrapFile {
   name: string;
@@ -265,26 +266,42 @@ export async function ensureWorkspace(customDir?: string): Promise<{ dir: string
 
 /**
  * Load all bootstrap files from workspace
+ * Checks global identity directory first, then falls back to workspace
  */
 export async function loadBootstrapFiles(customDir?: string): Promise<BootstrapFile[]> {
   const dir = resolveWorkspaceDir(customDir);
-  const entries = [
-    { name: DEFAULT_AGENTS_FILENAME, filePath: path.join(dir, DEFAULT_AGENTS_FILENAME) },
-    { name: DEFAULT_SOUL_FILENAME, filePath: path.join(dir, DEFAULT_SOUL_FILENAME) },
-    { name: DEFAULT_TOOLS_FILENAME, filePath: path.join(dir, DEFAULT_TOOLS_FILENAME) },
-    { name: DEFAULT_IDENTITY_FILENAME, filePath: path.join(dir, DEFAULT_IDENTITY_FILENAME) },
-    { name: DEFAULT_USER_FILENAME, filePath: path.join(dir, DEFAULT_USER_FILENAME) },
-    { name: DEFAULT_HEARTBEAT_FILENAME, filePath: path.join(dir, DEFAULT_HEARTBEAT_FILENAME) },
-    { name: DEFAULT_BOOTSTRAP_FILENAME, filePath: path.join(dir, DEFAULT_BOOTSTRAP_FILENAME) },
+  const fileNames = [
+    DEFAULT_AGENTS_FILENAME,
+    DEFAULT_SOUL_FILENAME,
+    DEFAULT_TOOLS_FILENAME,
+    DEFAULT_IDENTITY_FILENAME,
+    DEFAULT_USER_FILENAME,
+    DEFAULT_HEARTBEAT_FILENAME,
+    DEFAULT_BOOTSTRAP_FILENAME,
   ];
 
   const result: BootstrapFile[] = [];
-  for (const entry of entries) {
+  for (const name of fileNames) {
+    // Try global identity directory first
+    const globalPath = path.join(GLOBAL_IDENTITY_DIR, name);
+    const workspacePath = path.join(dir, name);
+
+    // First try global identity
     try {
-      const content = await fs.readFile(entry.filePath, "utf-8");
-      result.push({ name: entry.name, path: entry.filePath, content, missing: false });
+      const content = await fs.readFile(globalPath, "utf-8");
+      logger.debug(`Loaded ${name} from global identity: ${globalPath}`);
+      result.push({ name, path: globalPath, content, missing: false });
+      continue;
     } catch {
-      result.push({ name: entry.name, path: entry.filePath, missing: true });
+      // Not in global, try workspace
+    }
+
+    // Fall back to workspace
+    try {
+      const content = await fs.readFile(workspacePath, "utf-8");
+      result.push({ name, path: workspacePath, content, missing: false });
+    } catch {
+      result.push({ name, path: workspacePath, missing: true });
     }
   }
 
@@ -339,8 +356,20 @@ export function parseUserProfile(content: string): UserProfile {
 
 /**
  * Resolve identity from workspace
+ * Checks global identity directory first, then falls back to workspace
  */
 export async function resolveIdentity(customDir?: string): Promise<AgentIdentity> {
+  // Try global identity first
+  const globalPath = path.join(GLOBAL_IDENTITY_DIR, DEFAULT_IDENTITY_FILENAME);
+  try {
+    const content = await fs.readFile(globalPath, "utf-8");
+    logger.debug(`Loaded identity from global: ${globalPath}`);
+    return parseIdentity(content);
+  } catch {
+    // Not in global, try workspace
+  }
+
+  // Fall back to workspace
   const dir = resolveWorkspaceDir(customDir);
   const identityPath = path.join(dir, DEFAULT_IDENTITY_FILENAME);
 
@@ -354,8 +383,20 @@ export async function resolveIdentity(customDir?: string): Promise<AgentIdentity
 
 /**
  * Resolve user profile from workspace
+ * Checks global identity directory first, then falls back to workspace
  */
 export async function resolveUserProfile(customDir?: string): Promise<UserProfile> {
+  // Try global identity first
+  const globalPath = path.join(GLOBAL_IDENTITY_DIR, DEFAULT_USER_FILENAME);
+  try {
+    const content = await fs.readFile(globalPath, "utf-8");
+    logger.debug(`Loaded user profile from global: ${globalPath}`);
+    return parseUserProfile(content);
+  } catch {
+    // Not in global, try workspace
+  }
+
+  // Fall back to workspace
   const dir = resolveWorkspaceDir(customDir);
   const userPath = path.join(dir, DEFAULT_USER_FILENAME);
 

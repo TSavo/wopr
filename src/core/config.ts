@@ -95,7 +95,41 @@ export class ConfigManager {
       // Use defaults if file doesn't exist
       this.config = { ...DEFAULT_CONFIG };
     }
+
+    // Apply environment variable overrides (for Docker/container deployment)
+    this.applyEnvironmentOverrides();
+
     return this.config;
+  }
+
+  /**
+   * Apply environment variable overrides to config
+   * Environment variables take precedence over config file values
+   */
+  private applyEnvironmentOverrides(): void {
+    // Anthropic API key
+    if (process.env.ANTHROPIC_API_KEY) {
+      this.config.anthropic = this.config.anthropic || {};
+      this.config.anthropic.apiKey = process.env.ANTHROPIC_API_KEY;
+    }
+
+    // Discord configuration
+    if (process.env.DISCORD_TOKEN) {
+      this.config.discord = this.config.discord || {};
+      this.config.discord.token = process.env.DISCORD_TOKEN;
+    }
+    if (process.env.DISCORD_GUILD_ID) {
+      this.config.discord = this.config.discord || {};
+      this.config.discord.guildId = process.env.DISCORD_GUILD_ID;
+    }
+
+    // Daemon configuration
+    if (process.env.WOPR_DAEMON_PORT) {
+      this.config.daemon.port = parseInt(process.env.WOPR_DAEMON_PORT, 10);
+    }
+    if (process.env.WOPR_DAEMON_HOST) {
+      this.config.daemon.host = process.env.WOPR_DAEMON_HOST;
+    }
   }
 
   async save(): Promise<void> {

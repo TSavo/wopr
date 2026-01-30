@@ -598,10 +598,10 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
             logger.info(`No skills found matching "${args.join(" ")}"`);
           } else {
             logger.info(`Found ${results.length} skill(s):`);
-            for (const skill of results) {
-              logger.info(`  ${skill.name} (${skill.registry})`);
-              logger.info(`    ${skill.description}`);
-              logger.info(`    wopr skill install ${skill.source}`);
+            for (const result of results) {
+              logger.info(`  ${result.skill.name} (${result.registry})`);
+              logger.info(`    ${result.skill.description || "No description"}`);
+              logger.info(`    wopr skill install ${result.skill.source}`);
             }
           }
           break;
@@ -1288,6 +1288,53 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
     const { onboardCommand } = await import("./commands/onboard/index.js");
     await onboardCommand(process.argv.slice(3));
   } else {
-    help();
+    // Check for plugin commands
+    const handled = await tryPluginCommand(command, [subcommand, ...args].filter(Boolean));
+    if (!handled) {
+      help();
+    }
   }
 })();
+
+// ==================== Plugin Commands ====================
+
+/**
+ * Try to handle command via installed plugins
+ */
+async function tryPluginCommand(command: string, args: string[]): Promise<boolean> {
+  if (!command) return false;
+
+  const { getInstalledPlugins, loadPlugin, getLoadedPlugin } = await import("./plugins.js");
+  const installed = getInstalledPlugins().filter(p => p.enabled);
+
+  // First, load ALL enabled plugins to ensure providers/extensions are registered
+  // This is necessary because provider plugins (TTS, STT) register during init
+  const injectors = {
+    inject: async () => "",
+    getSessions: () => [],
+  };
+
+  for (const pluginInfo of installed) {
+    try {
+      await loadPlugin(pluginInfo, injectors, { skipRequirementsCheck: true });
+    } catch {
+      // Plugin failed to load, continue with others
+    }
+  }
+
+  // Now find and execute the command
+  for (const pluginInfo of installed) {
+    const loaded = getLoadedPlugin(pluginInfo.name);
+    if (!loaded) continue;
+
+    if (loaded.plugin.commands) {
+      const cmd = loaded.plugin.commands.find(c => c.name === command);
+      if (cmd) {
+        await cmd.handler(loaded.context, args);
+        return true;
+      }
+    }
+  }
+
+  return false;
+}

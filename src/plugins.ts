@@ -55,7 +55,8 @@ import {
   formatMissingRequirements,
 } from "./plugins/requirements.js";
 
-const WOPR_HOME = process.env.WOPR_HOME || join(process.env.HOME || "~", ".wopr");
+import { homedir } from "os";
+const WOPR_HOME = process.env.WOPR_HOME || join(homedir(), "wopr");
 const PLUGINS_DIR = join(WOPR_HOME, "plugins");
 const PLUGINS_FILE = join(WOPR_HOME, "plugins.json");
 const REGISTRIES_FILE = join(WOPR_HOME, "plugin-registries.json");
@@ -915,10 +916,152 @@ export function listRegistries(): PluginRegistryEntry[] {
   return getPluginRegistries();
 }
 
-export async function searchPlugins(query: string): Promise<any[]> {
-  // TODO: Implement search across registries
-  // For now, return empty results
-  return [];
+export interface DiscoveredPlugin {
+  name: string;
+  description?: string;
+  source: "github" | "npm" | "installed" | "registry";
+  url?: string;
+  version?: string;
+  installed?: boolean;
+}
+
+/**
+ * Search for plugins across multiple sources
+ */
+export async function searchPlugins(query: string): Promise<DiscoveredPlugin[]> {
+  const results: DiscoveredPlugin[] = [];
+  const seen = new Set<string>();
+
+  // 1. Check installed plugins first
+  const installed = getInstalledPlugins();
+  for (const p of installed) {
+    if (!query || p.name.includes(query)) {
+      if (!seen.has(p.name)) {
+        seen.add(p.name);
+        results.push({
+          name: p.name,
+          description: p.description,
+          source: "installed",
+          version: p.version,
+          installed: true,
+        });
+      }
+    }
+  }
+
+  // 2. Search GitHub repos (if gh is available)
+  try {
+    const ghResults = await searchGitHubPlugins(query);
+    for (const p of ghResults) {
+      if (!seen.has(p.name)) {
+        seen.add(p.name);
+        p.installed = installed.some(i => i.name === p.name);
+        results.push(p);
+      }
+    }
+  } catch {
+    // gh not available or error, skip
+  }
+
+  // 3. Search npm (if online)
+  try {
+    const npmResults = await searchNpmPlugins(query);
+    for (const p of npmResults) {
+      if (!seen.has(p.name)) {
+        seen.add(p.name);
+        p.installed = installed.some(i => i.name === p.name);
+        results.push(p);
+      }
+    }
+  } catch {
+    // npm search failed, skip
+  }
+
+  return results;
+}
+
+/**
+ * Search GitHub for wopr plugins using gh CLI
+ */
+async function searchGitHubPlugins(query?: string): Promise<DiscoveredPlugin[]> {
+  const results: DiscoveredPlugin[] = [];
+
+  try {
+    // Get user's repos matching wopr-plugin-*
+    const output = execSync(
+      `gh repo list --json name,description,url --limit 100 2>/dev/null`,
+      { encoding: "utf-8", timeout: 10000 }
+    );
+    const repos = JSON.parse(output);
+
+    for (const repo of repos) {
+      if (repo.name.startsWith("wopr-plugin-")) {
+        if (!query || repo.name.includes(query) || repo.description?.includes(query)) {
+          results.push({
+            name: repo.name,
+            description: repo.description,
+            source: "github",
+            url: repo.url,
+          });
+        }
+      }
+    }
+  } catch {
+    // gh not available or not authenticated
+  }
+
+  return results;
+}
+
+/**
+ * Search npm for wopr plugins
+ */
+async function searchNpmPlugins(query?: string): Promise<DiscoveredPlugin[]> {
+  const results: DiscoveredPlugin[] = [];
+  const searchTerm = query ? `wopr-plugin-${query}` : "wopr-plugin-";
+
+  try {
+    const output = execSync(
+      `npm search "${searchTerm}" --json 2>/dev/null | head -c 50000`,
+      { encoding: "utf-8", timeout: 15000 }
+    );
+    const packages = JSON.parse(output);
+
+    for (const pkg of packages) {
+      if (pkg.name.startsWith("wopr-plugin-")) {
+        results.push({
+          name: pkg.name,
+          description: pkg.description,
+          source: "npm",
+          version: pkg.version,
+          url: `https://www.npmjs.com/package/${pkg.name}`,
+        });
+      }
+    }
+  } catch {
+    // npm search failed
+  }
+
+  return results;
+}
+
+/**
+ * Discover all available voice plugins from GitHub
+ */
+export async function discoverVoicePlugins(): Promise<{
+  stt: DiscoveredPlugin[];
+  tts: DiscoveredPlugin[];
+  channels: DiscoveredPlugin[];
+  cli: DiscoveredPlugin[];
+}> {
+  const all = await searchPlugins("voice");
+
+  return {
+    stt: all.filter(p => p.name.includes("stt") || p.name.includes("whisper") || p.name.includes("deepgram")),
+    tts: all.filter(p => p.name.includes("tts") || p.name.includes("piper") || p.name.includes("elevenlabs")),
+    channels: all.filter(p => p.name.includes("channel") && p.name.includes("voice")),
+    cli: all.filter(p => p.name.includes("voice-cli")),
+  };
 }
 
 // ============================================================================

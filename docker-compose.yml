@@ -5,11 +5,13 @@ services:
     restart: unless-stopped
     volumes:
       - wopr-data:/data
+      - ~/.claude:/claude-creds
     environment:
       - WOPR_HOME=/data
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - WOPR_DAEMON_HOST=0.0.0.0
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
     ports:
-      - "49737:49737/udp"
+      - "7437:7437"
 
 volumes:
   wopr-data:
