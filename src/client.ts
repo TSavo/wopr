@@ -285,7 +285,7 @@ export class WoprClient {
   }
 
   async installSkill(source: string, name?: string): Promise<void> {
-    await this.request("/skills", {
+    await this.request("/skills/install", {
       method: "POST",
       body: JSON.stringify({ source, name }),
     });
