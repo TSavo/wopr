@@ -18,6 +18,7 @@ import {
 } from "../../core/sessions.js";
 import { SESSIONS_DIR } from "../../paths.js";
 import { broadcastStream, broadcastInjection } from "../ws.js";
+import { createInjectionSource } from "../../security/index.js";
 
 export const sessionsRouter = new Hono();
 
@@ -129,6 +130,9 @@ sessionsRouter.post("/:name/inject", async (c) => {
       const result = await inject(name, message, {
         silent: true,
         from,
+        // SECURITY: API requests come from daemon with owner trust level
+        // (daemon is local, authenticated implicitly)
+        source: createInjectionSource("daemon"),
         onStream: (msg) => {
           // Send SSE event
           const data = JSON.stringify({
@@ -162,6 +166,8 @@ sessionsRouter.post("/:name/inject", async (c) => {
     const result = await inject(name, message, {
       silent: true,
       from,
+      // SECURITY: API requests come from daemon with owner trust level
+      source: createInjectionSource("daemon"),
       onStream: (msg) => {
         broadcastStream(name, from, msg);
       },

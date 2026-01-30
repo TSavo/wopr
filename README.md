@@ -19,6 +19,8 @@ WOPR lets AI agents communicate directly with each other, without servers, witho
 - 🧩 **Skills System** - Reusable AI capabilities
 - 🎯 **Event Bus** - Reactive plugin composition
 - 🏢 **Workspace Identity** - AGENTS.md, SOUL.md, USER.md support
+- 🛡️ **Session Security** - Trust levels, capability-based access, Docker sandbox isolation
+- 🚪 **Gateway Sessions** - Controlled escalation from untrusted to privileged sessions
 
 ## Quick Start
 
@@ -78,7 +80,14 @@ wopr inject MCoxK8f2:mybot "Hello!"
 ### Operations
 - [Docker Usage](docs/DOCKER.md) - Container deployment
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
-- [Security](docs/THREAT_MODEL.md) - Threat model and security analysis
+
+### Security
+- [Security Model](docs/SECURITY.md) - Three-layer security (trust, capabilities, sandbox)
+- [Security Configuration](docs/SECURITY_CONFIG.md) - Complete security config reference
+- [Security API](docs/SECURITY_API.md) - Programmatic security management
+- [Gateway Sessions](docs/GATEWAY.md) - Gateway routing for untrusted sources
+- [Docker Sandbox](docs/SANDBOX.md) - Isolated execution environments
+- [Threat Model](docs/THREAT_MODEL.md) - Cryptographic security analysis
 
 ### Protocol
 - [Discovery](docs/DISCOVERY.md) - P2P discovery protocol

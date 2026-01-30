@@ -5,6 +5,18 @@ export const MIN_PROTOCOL_VERSION = 1;
 // Re-export provider types for plugins
 export type { ModelProvider } from "./types/provider.js";
 
+// Re-export security types for plugins and external use
+export type {
+  TrustLevel,
+  Capability,
+  InjectionSource,
+  InjectionSourceType,
+  SecurityPolicy,
+  SecurityConfig,
+  SandboxConfig,
+  SecurityEvent,
+} from "./security/types.js";
+
 // Session types
 export interface Session {
   name: string;

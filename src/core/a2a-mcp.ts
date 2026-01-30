@@ -21,6 +21,12 @@ import {
   createOnceJob,
 } from "./cron.js";
 import { eventBus } from "./events.js";
+import {
+  getContext,
+  checkToolAccess,
+  isEnforcementEnabled,
+  type PolicyCheckResult,
+} from "../security/index.js";
 
 const execAsync = promisify(exec);
 
@@ -90,6 +96,57 @@ export interface ToolContext {
   sessionName: string;  // The WOPR session calling this tool
 }
 
+/**
+ * Check if a tool can be used in the current security context
+ *
+ * @param toolName - Name of the tool to check
+ * @param sessionName - Session making the request
+ * @returns Policy check result with allowed status and reason
+ */
+function checkToolPermission(toolName: string, sessionName: string): PolicyCheckResult {
+  // Get the security context for this session (set during inject)
+  const securityContext = getContext(sessionName);
+
+  if (!securityContext) {
+    // No security context = legacy behavior, allow with warning
+    logger.warn(`[a2a-mcp] No security context for session ${sessionName}, allowing ${toolName}`);
+    return { allowed: true, warning: "No security context" };
+  }
+
+  // Check if tool access is allowed
+  return securityContext.canUseTool(toolName);
+}
+
+/**
+ * Wrapper to enforce security checks on tool handlers
+ *
+ * @param toolName - Name of the tool
+ * @param sessionName - Session making the request
+ * @param handler - The actual tool handler
+ */
+async function withSecurityCheck<T>(
+  toolName: string,
+  sessionName: string,
+  handler: () => Promise<T>
+): Promise<T | { content: { type: string; text: string }[]; isError: boolean }> {
+  const check = checkToolPermission(toolName, sessionName);
+
+  if (!check.allowed) {
+    if (isEnforcementEnabled()) {
+      logger.warn(`[a2a-mcp] Tool ${toolName} denied for session ${sessionName}: ${check.reason}`);
+      return {
+        content: [{ type: "text", text: `Access denied: ${check.reason}` }],
+        isError: true,
+      };
+    } else {
+      // Warn mode - log but continue
+      logger.warn(`[a2a-mcp] Tool ${toolName} would be denied: ${check.reason}`);
+    }
+  }
+
+  return handler();
+}
+
 // Registry of additional tools from plugins
 const pluginTools: Map<string, RegisteredTool> = new Map();
 
@@ -142,6 +199,7 @@ export function listA2ATools(): string[] {
     "self_reflect", "identity_get", "identity_update", "soul_get", "soul_update",
     "cron_schedule", "cron_once", "cron_list", "cron_cancel",
     "event_emit", "event_list",
+    "security_whoami", "security_check",
     "http_fetch", "exec_command", "notify"
   ];
   return [...coreTools, ...pluginTools.keys()];
@@ -220,12 +278,15 @@ export function getA2AMcpServer(sessionName: string): any {
         message: z.string().describe("The message to send to the target session")
       },
       async (args) => {
-        if (!injectFn) throw new Error("Session functions not initialized");
-        const { session, message } = args;
-        const response = await injectFn(session, message, { from: sessionName, silent: true });
-        return {
-          content: [{ type: "text", text: `Response from ${session}:\n${response.response}` }]
-        };
+        // SECURITY: Check cross.inject capability
+        return withSecurityCheck("sessions_send", sessionName, async () => {
+          if (!injectFn) throw new Error("Session functions not initialized");
+          const { session, message } = args;
+          const response = await injectFn(session, message, { from: sessionName, silent: true });
+          return {
+            content: [{ type: "text", text: `Response from ${session}:\n${response.response}` }]
+          };
+        });
       }
     )
   );
@@ -233,21 +294,40 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "sessions_history",
-      "Fetch conversation history from another session. Use this to get context before sending a message.",
+      "Fetch conversation history from a session. Requires cross.read capability for reading other sessions' history.",
       {
         session: z.string().describe("Session name to fetch history from"),
         limit: z.number().optional().describe("Number of recent messages to fetch (default: 10, max: 50)")
       },
       async (args) => {
-        if (!readConversationLog) throw new Error("Session functions not initialized");
-        const { session, limit = 10 } = args;
-        const entries = readConversationLog(session, Math.min(limit, 50));
-        const formatted = entries.map((e: any) =>
-          `[${new Date(e.ts).toISOString()}] ${e.from}: ${e.content?.substring(0, 200)}${e.content?.length > 200 ? '...' : ''}`
-        ).join('\n');
-        return {
-          content: [{ type: "text", text: formatted || "No history found for this session." }]
-        };
+        // SECURITY: Check session.history capability, plus cross.read for other sessions
+        return withSecurityCheck("sessions_history", sessionName, async () => {
+          if (!readConversationLog) throw new Error("Session functions not initialized");
+          const { session, limit = 10 } = args;
+
+          // SECURITY: If reading another session's history, require cross.read capability
+          if (session !== sessionName) {
+            const ctx = getContext(sessionName);
+            if (ctx && !ctx.hasCapability("cross.read")) {
+              if (isEnforcementEnabled()) {
+                return {
+                  content: [{ type: "text", text: `Access denied: Reading other sessions' history requires 'cross.read' capability` }],
+                  isError: true,
+                };
+              } else {
+                logger.warn(`[a2a-mcp] sessions_history: ${sessionName} reading ${session} history without cross.read capability`);
+              }
+            }
+          }
+
+          const entries = readConversationLog(session, Math.min(limit, 50));
+          const formatted = entries.map((e: any) =>
+            `[${new Date(e.ts).toISOString()}] ${e.from}: ${e.content?.substring(0, 200)}${e.content?.length > 200 ? '...' : ''}`
+          ).join('\n');
+          return {
+            content: [{ type: "text", text: formatted || "No history found for this session." }]
+          };
+        });
       }
     )
   );
@@ -261,12 +341,15 @@ export function getA2AMcpServer(sessionName: string): any {
         purpose: z.string().describe("Describe what this session should do (becomes its system context)")
       },
       async (args) => {
-        if (!setSessionContext) throw new Error("Session functions not initialized");
-        const { name, purpose } = args;
-        setSessionContext(name, purpose);
-        return {
-          content: [{ type: "text", text: `Session '${name}' created successfully with purpose: ${purpose}` }]
-        };
+        // SECURITY: Check session.spawn capability
+        return withSecurityCheck("sessions_spawn", sessionName, async () => {
+          if (!setSessionContext) throw new Error("Session functions not initialized");
+          const { name, purpose } = args;
+          setSessionContext(name, purpose);
+          return {
+            content: [{ type: "text", text: `Session '${name}' created successfully with purpose: ${purpose}` }]
+          };
+        });
       }
     )
   );
@@ -278,21 +361,49 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "config_get",
-      "Get a WOPR configuration value. Use dot notation for nested keys (e.g., 'providers.codex.model').",
+      "Get a WOPR configuration value. Use dot notation for nested keys (e.g., 'providers.codex.model'). Sensitive values (API keys, secrets) are redacted for security.",
       {
         key: z.string().optional().describe("Config key to retrieve (dot notation). Omit to get all config.")
       },
       async (args) => {
-        await centralConfig.load();
-        const { key } = args;
-        if (key) {
-          const value = centralConfig.getValue(key);
-          if (value === undefined) {
-            return { content: [{ type: "text", text: `Config key "${key}" not found` }], isError: true };
+        // SECURITY: Check config.read capability
+        return withSecurityCheck("config_get", sessionName, async () => {
+          await centralConfig.load();
+          const { key } = args;
+
+          // Redact sensitive values to prevent API key leakage
+          const redactSensitive = (obj: any, path: string = ""): any => {
+            if (obj === null || obj === undefined) return obj;
+            if (typeof obj !== "object") {
+              // Check if this is a sensitive field by name
+              const keyName = path.split(".").pop()?.toLowerCase() || "";
+              const sensitiveKeys = ["apikey", "api_key", "secret", "token", "password", "private", "privatekey", "private_key"];
+              if (sensitiveKeys.some(sk => keyName.includes(sk))) {
+                return "[REDACTED]";
+              }
+              return obj;
+            }
+            if (Array.isArray(obj)) {
+              return obj.map((item, i) => redactSensitive(item, `${path}[${i}]`));
+            }
+            const result: any = {};
+            for (const [k, v] of Object.entries(obj)) {
+              result[k] = redactSensitive(v, path ? `${path}.${k}` : k);
+            }
+            return result;
+          };
+
+          if (key) {
+            const value = centralConfig.getValue(key);
+            if (value === undefined) {
+              return { content: [{ type: "text", text: `Config key "${key}" not found` }], isError: true };
+            }
+            const redactedValue = redactSensitive(value, key);
+            return { content: [{ type: "text", text: JSON.stringify({ key, value: redactedValue }, null, 2) }] };
           }
-          return { content: [{ type: "text", text: JSON.stringify({ key, value }, null, 2) }] };
-        }
-        return { content: [{ type: "text", text: JSON.stringify(centralConfig.get(), null, 2) }] };
+          const redactedConfig = redactSensitive(centralConfig.get());
+          return { content: [{ type: "text", text: JSON.stringify(redactedConfig, null, 2) }] };
+        });
       }
     )
   );
@@ -306,13 +417,16 @@ export function getA2AMcpServer(sessionName: string): any {
         value: z.string().describe("Value to set (strings, numbers, booleans, or JSON for objects)")
       },
       async (args) => {
-        const { key, value } = args;
-        await centralConfig.load();
-        let parsedValue: any = value;
-        try { parsedValue = JSON.parse(value); } catch { /* keep as string */ }
-        centralConfig.setValue(key, parsedValue);
-        await centralConfig.save();
-        return { content: [{ type: "text", text: `Config set: ${key} = ${JSON.stringify(parsedValue)}` }] };
+        // SECURITY: Check config.write capability
+        return withSecurityCheck("config_set", sessionName, async () => {
+          const { key, value } = args;
+          await centralConfig.load();
+          let parsedValue: any = value;
+          try { parsedValue = JSON.parse(value); } catch { /* keep as string */ }
+          centralConfig.setValue(key, parsedValue);
+          await centralConfig.save();
+          return { content: [{ type: "text", text: `Config set: ${key} = ${JSON.stringify(parsedValue)}` }] };
+        });
       }
     )
   );
@@ -461,9 +575,11 @@ export function getA2AMcpServer(sessionName: string): any {
         append: z.boolean().optional().describe("If true, append instead of replacing")
       },
       async (args) => {
-        const { file, content, append } = args;
-        const sessionDir = join(SESSIONS_DIR, sessionName);
-        const memoryDir = join(sessionDir, "memory");
+        // SECURITY: Check memory.write capability
+        return withSecurityCheck("memory_write", sessionName, async () => {
+          const { file, content, append } = args;
+          const sessionDir = join(SESSIONS_DIR, sessionName);
+          const memoryDir = join(sessionDir, "memory");
 
         if (!existsSync(memoryDir)) {
           mkdirSync(memoryDir, { recursive: true });
@@ -489,6 +605,7 @@ export function getA2AMcpServer(sessionName: string): any {
         }
 
         return { content: [{ type: "text", text: `${shouldAppend ? "Appended to" : "Wrote"} ${filename}` }] };
+        });
       }
     )
   );
@@ -651,10 +768,12 @@ export function getA2AMcpServer(sessionName: string): any {
         section: z.string().optional().describe("Section header (default: today's date)")
       },
       async (args) => {
-        const { reflection, tattoo, section } = args;
-        if (!reflection && !tattoo) {
-          return { content: [{ type: "text", text: "Provide 'reflection' or 'tattoo'" }], isError: true };
-        }
+        // SECURITY: Check memory.write capability
+        return withSecurityCheck("self_reflect", sessionName, async () => {
+          const { reflection, tattoo, section } = args;
+          if (!reflection && !tattoo) {
+            return { content: [{ type: "text", text: "Provide 'reflection' or 'tattoo'" }], isError: true };
+          }
 
         const sessionDir = join(SESSIONS_DIR, sessionName);
         const memoryDir = join(sessionDir, "memory");
@@ -698,6 +817,7 @@ export function getA2AMcpServer(sessionName: string): any {
         }
 
         return { content: [{ type: "text", text: "Nothing to add" }] };
+        });
       }
     )
   );
@@ -754,9 +874,11 @@ export function getA2AMcpServer(sessionName: string): any {
         sectionContent: z.string().optional().describe("Content for custom section")
       },
       async (args) => {
-        const { name, creature, vibe, emoji, section, sectionContent } = args;
-        const sessionDir = join(SESSIONS_DIR, sessionName);
-        const identityPath = join(sessionDir, "IDENTITY.md");
+        // SECURITY: Check memory.write capability
+        return withSecurityCheck("identity_update", sessionName, async () => {
+          const { name, creature, vibe, emoji, section, sectionContent } = args;
+          const sessionDir = join(SESSIONS_DIR, sessionName);
+          const identityPath = join(sessionDir, "IDENTITY.md");
 
         let content = existsSync(identityPath)
           ? readFileSync(identityPath, "utf-8")
@@ -797,6 +919,7 @@ export function getA2AMcpServer(sessionName: string): any {
 
         writeFileSync(identityPath, content);
         return { content: [{ type: "text", text: `Identity updated: ${updates.join(", ")}` }] };
+        });
       }
     )
   );
@@ -835,14 +958,16 @@ export function getA2AMcpServer(sessionName: string): any {
         sectionContent: z.string().optional().describe("Content for the section")
       },
       async (args) => {
-        const { content, section, sectionContent } = args;
-        const sessionDir = join(SESSIONS_DIR, sessionName);
-        const soulPath = join(sessionDir, "SOUL.md");
+        // SECURITY: Check memory.write capability
+        return withSecurityCheck("soul_update", sessionName, async () => {
+          const { content, section, sectionContent } = args;
+          const sessionDir = join(SESSIONS_DIR, sessionName);
+          const soulPath = join(sessionDir, "SOUL.md");
 
-        if (content) {
-          writeFileSync(soulPath, content);
-          return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
-        }
+          if (content) {
+            writeFileSync(soulPath, content);
+            return { content: [{ type: "text", text: "SOUL.md replaced entirely" }] };
+          }
 
         if (section && sectionContent) {
           let existing = existsSync(soulPath)
@@ -862,6 +987,7 @@ export function getA2AMcpServer(sessionName: string): any {
         }
 
         return { content: [{ type: "text", text: "Provide 'content' or 'section'+'sectionContent'" }], isError: true };
+        });
       }
     )
   );
@@ -873,7 +999,7 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "cron_schedule",
-      "Schedule a recurring cron job that sends a message to a session.",
+      "Schedule a recurring cron job that sends a message to a session. Requires cross.inject capability when targeting other sessions.",
       {
         name: z.string().describe("Unique name for this cron job"),
         schedule: z.string().describe("Cron schedule (e.g., '0 9 * * *' for 9am daily)"),
@@ -881,9 +1007,28 @@ export function getA2AMcpServer(sessionName: string): any {
         message: z.string().describe("Message to inject into the session")
       },
       async (args) => {
-        const { name, schedule, session, message } = args;
-        addCron({ name, schedule, session, message });
-        return { content: [{ type: "text", text: `Cron job '${name}' scheduled: ${schedule} -> ${session}` }] };
+        // SECURITY: Check cron.manage capability
+        return withSecurityCheck("cron_schedule", sessionName, async () => {
+          const { name, schedule, session, message } = args;
+
+          // SECURITY: Require cross.inject capability when targeting other sessions
+          if (session !== sessionName) {
+            const ctx = getContext(sessionName);
+            if (ctx && !ctx.hasCapability("cross.inject")) {
+              if (isEnforcementEnabled()) {
+                return {
+                  content: [{ type: "text", text: `Access denied: Scheduling cron jobs for other sessions requires 'cross.inject' capability` }],
+                  isError: true,
+                };
+              } else {
+                logger.warn(`[a2a-mcp] cron_schedule: ${sessionName} targeting ${session} without cross.inject capability`);
+              }
+            }
+          }
+
+          addCron({ name, schedule, session, message });
+          return { content: [{ type: "text", text: `Cron job '${name}' scheduled: ${schedule} -> ${session}` }] };
+        });
       }
     )
   );
@@ -891,21 +1036,40 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "cron_once",
-      "Schedule a one-time message. Supports relative (+5m, +1h), absolute (14:30), or ISO timestamps.",
+      "Schedule a one-time message. Supports relative (+5m, +1h), absolute (14:30), or ISO timestamps. Requires cross.inject capability when targeting other sessions.",
       {
         time: z.string().describe("When to run: '+5m', '+1h', '14:30', or ISO timestamp"),
         session: z.string().describe("Target session"),
         message: z.string().describe("Message to inject")
       },
       async (args) => {
-        const { time, session, message } = args;
-        try {
-          const job = createOnceJob(time, session, message);
-          addCron(job);
-          return { content: [{ type: "text", text: `One-time job scheduled for ${new Date(job.runAt!).toISOString()}` }] };
-        } catch (err: any) {
-          return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
-        }
+        // SECURITY: Check cron.manage capability
+        return withSecurityCheck("cron_once", sessionName, async () => {
+          const { time, session, message } = args;
+
+          // SECURITY: Require cross.inject capability when targeting other sessions
+          if (session !== sessionName) {
+            const ctx = getContext(sessionName);
+            if (ctx && !ctx.hasCapability("cross.inject")) {
+              if (isEnforcementEnabled()) {
+                return {
+                  content: [{ type: "text", text: `Access denied: Scheduling cron jobs for other sessions requires 'cross.inject' capability` }],
+                  isError: true,
+                };
+              } else {
+                logger.warn(`[a2a-mcp] cron_once: ${sessionName} targeting ${session} without cross.inject capability`);
+              }
+            }
+          }
+
+          try {
+            const job = createOnceJob(time, session, message);
+            addCron(job);
+            return { content: [{ type: "text", text: `One-time job scheduled for ${new Date(job.runAt!).toISOString()}` }] };
+          } catch (err: any) {
+            return { content: [{ type: "text", text: `Error: ${err.message}` }], isError: true };
+          }
+        });
       }
     )
   );
@@ -939,11 +1103,14 @@ export function getA2AMcpServer(sessionName: string): any {
         name: z.string().describe("Name of the cron job to cancel")
       },
       async (args) => {
-        const removed = removeCron(args.name);
-        if (!removed) {
-          return { content: [{ type: "text", text: `Cron job '${args.name}' not found` }], isError: true };
-        }
-        return { content: [{ type: "text", text: `Cron job '${args.name}' cancelled` }] };
+        // SECURITY: Check cron.manage capability
+        return withSecurityCheck("cron_cancel", sessionName, async () => {
+          const removed = removeCron(args.name);
+          if (!removed) {
+            return { content: [{ type: "text", text: `Cron job '${args.name}' not found` }], isError: true };
+          }
+          return { content: [{ type: "text", text: `Cron job '${args.name}' cancelled` }] };
+        });
       }
     )
   );
@@ -961,9 +1128,12 @@ export function getA2AMcpServer(sessionName: string): any {
         payload: z.record(z.string(), z.any()).optional().describe("Event payload data")
       },
       async (args) => {
-        const { event, payload } = args;
-        await eventBus.emitCustom(event, payload || {}, sessionName);
-        return { content: [{ type: "text", text: `Event '${event}' emitted` }] };
+        // SECURITY: Check event.emit capability
+        return withSecurityCheck("event_emit", sessionName, async () => {
+          const { event, payload } = args;
+          await eventBus.emitCustom(event, payload || {}, sessionName);
+          return { content: [{ type: "text", text: `Event '${event}' emitted` }] };
+        });
       }
     )
   );
@@ -989,6 +1159,124 @@ export function getA2AMcpServer(sessionName: string): any {
   );
 
   // ========================================================================
+  // Security Introspection Tools
+  // ========================================================================
+
+  tools.push(
+    tool(
+      "security_whoami",
+      "Get your current security context including trust level, capabilities, and sandbox status. Use this to understand what actions are available to you.",
+      {},
+      async () => {
+        const context = getContext(sessionName);
+
+        if (!context) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                warning: "No security context found (legacy mode)",
+                trustLevel: "owner",
+                capabilities: ["*"],
+                sandbox: { enabled: false },
+                session: sessionName,
+              }, null, 2)
+            }]
+          };
+        }
+
+        // Get resolved policy for this context
+        const policy = context.getResolvedPolicy();
+
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              session: sessionName,
+              source: {
+                type: context.source.type,
+                trustLevel: context.source.trustLevel,
+                identity: context.source.identity,
+              },
+              capabilities: policy.capabilities,
+              allowedTools: policy.tools.allow,
+              deniedTools: policy.tools.deny,
+              sandbox: {
+                enabled: policy.sandbox.enabled,
+                network: policy.sandbox.network,
+              },
+              isGateway: policy.isGateway,
+              canForward: policy.canForward,
+            }, null, 2)
+          }]
+        };
+      }
+    )
+  );
+
+  tools.push(
+    tool(
+      "security_check",
+      "Check if a specific tool or capability is allowed before attempting to use it.",
+      {
+        tool: z.string().optional().describe("Tool name to check (e.g., 'http_fetch', 'exec_command')"),
+        capability: z.string().optional().describe("Capability to check (e.g., 'inject.network', 'cross.inject')")
+      },
+      async (args) => {
+        const { tool: toolName, capability } = args;
+        const context = getContext(sessionName);
+
+        if (!context) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                allowed: true,
+                reason: "No security context (legacy mode allows all)"
+              }, null, 2)
+            }]
+          };
+        }
+
+        if (toolName) {
+          const check = context.canUseTool(toolName);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                tool: toolName,
+                ...check
+              }, null, 2)
+            }]
+          };
+        }
+
+        if (capability) {
+          const allowed = context.hasCapability(capability as any);
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                capability,
+                allowed,
+                trustLevel: context.source.trustLevel
+              }, null, 2)
+            }]
+          };
+        }
+
+        return {
+          content: [{
+            type: "text",
+            text: "Provide 'tool' or 'capability' to check"
+          }],
+          isError: true
+        };
+      }
+    )
+  );
+
+  // ========================================================================
   // HTTP & Exec Tools
   // ========================================================================
 
@@ -1004,39 +1292,42 @@ export function getA2AMcpServer(sessionName: string): any {
         timeout: z.number().optional().describe("Timeout in ms (default: 30000)")
       },
       async (args) => {
-        const { url, method = "GET", headers = {}, body, timeout = 30000 } = args;
+        // SECURITY: Check inject.network capability (potential exfiltration vector)
+        return withSecurityCheck("http_fetch", sessionName, async () => {
+          const { url, method = "GET", headers = {}, body, timeout = 30000 } = args;
 
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), timeout);
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-          const response = await fetch(url, {
-            method: method.toUpperCase(),
-            headers: headers as Record<string, string>,
-            body: body || undefined,
-            signal: controller.signal,
-          });
+            const response = await fetch(url, {
+              method: method.toUpperCase(),
+              headers: headers as Record<string, string>,
+              body: body || undefined,
+              signal: controller.signal,
+            });
 
-          clearTimeout(timeoutId);
+            clearTimeout(timeoutId);
 
-          const contentType = response.headers.get("content-type") || "";
-          let responseBody: string;
+            const contentType = response.headers.get("content-type") || "";
+            let responseBody: string;
 
-          if (contentType.includes("application/json")) {
-            const json = await response.json();
-            responseBody = JSON.stringify(json, null, 2);
-          } else {
-            responseBody = await response.text();
+            if (contentType.includes("application/json")) {
+              const json = await response.json();
+              responseBody = JSON.stringify(json, null, 2);
+            } else {
+              responseBody = await response.text();
+            }
+
+            if (responseBody.length > 10000) {
+              responseBody = responseBody.substring(0, 10000) + "\n... (truncated)";
+            }
+
+            return { content: [{ type: "text", text: `HTTP ${response.status} ${response.statusText}\n\n${responseBody}` }] };
+          } catch (err: any) {
+            return { content: [{ type: "text", text: `HTTP request failed: ${err.message}` }], isError: true };
           }
-
-          if (responseBody.length > 10000) {
-            responseBody = responseBody.substring(0, 10000) + "\n... (truncated)";
-          }
-
-          return { content: [{ type: "text", text: `HTTP ${response.status} ${response.statusText}\n\n${responseBody}` }] };
-        } catch (err: any) {
-          return { content: [{ type: "text", text: `HTTP request failed: ${err.message}` }], isError: true };
-        }
+        });
       }
     )
   );
@@ -1044,57 +1335,105 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "exec_command",
-      "Execute a sandboxed shell command. Only safe commands allowed (ls, cat, grep, etc.).",
+      "Execute a sandboxed shell command. Only safe commands allowed (ls, cat, grep, etc.). Working directory is restricted to session directory.",
       {
         command: z.string().describe("Command to execute"),
-        cwd: z.string().optional().describe("Working directory"),
+        cwd: z.string().optional().describe("Working directory (must be within session directory)"),
         timeout: z.number().optional().describe("Timeout in ms (default: 10000, max: 60000)")
       },
       async (args) => {
-        const { command, cwd, timeout = 10000 } = args;
+        // SECURITY: Check inject.exec capability
+        return withSecurityCheck("exec_command", sessionName, async () => {
+          const { command, cwd, timeout = 10000 } = args;
 
-        const allowedCommands = [
-          "ls", "cat", "grep", "find", "echo", "date", "pwd", "whoami",
-          "head", "tail", "wc", "sort", "uniq", "diff", "env", "which",
-          "file", "stat", "du", "df", "uptime", "hostname", "uname"
-        ];
+          const allowedCommands = [
+            "ls", "cat", "grep", "find", "echo", "date", "pwd", "whoami",
+            "head", "tail", "wc", "sort", "uniq", "diff", "env", "which",
+            "file", "stat", "du", "df", "uptime", "hostname", "uname"
+          ];
 
-        const firstWord = command.trim().split(/\s+/)[0];
-        if (!allowedCommands.includes(firstWord)) {
-          return {
-            content: [{ type: "text", text: `Command '${firstWord}' not allowed. Allowed: ${allowedCommands.join(", ")}` }],
-            isError: true
-          };
-        }
-
-        if (command.includes(";") || command.includes("&&") || command.includes("||") ||
-            command.includes("|") || command.includes("`") || command.includes("$(")) {
-          return {
-            content: [{ type: "text", text: "Shell operators not allowed" }],
-            isError: true
-          };
-        }
-
-        try {
-          const workDir = cwd || join(SESSIONS_DIR, sessionName);
-          const effectiveTimeout = Math.min(timeout, 60000);
-
-          const { stdout, stderr } = await execAsync(command, {
-            cwd: workDir,
-            timeout: effectiveTimeout,
-            maxBuffer: 1024 * 1024,
-          });
-
-          let output = stdout;
-          if (stderr) output += `\n[stderr]\n${stderr}`;
-          if (output.length > 10000) {
-            output = output.substring(0, 10000) + "\n... (truncated)";
+          const firstWord = command.trim().split(/\s+/)[0];
+          if (!allowedCommands.includes(firstWord)) {
+            return {
+              content: [{ type: "text", text: `Command '${firstWord}' not allowed. Allowed: ${allowedCommands.join(", ")}` }],
+              isError: true
+            };
           }
 
-          return { content: [{ type: "text", text: output || "(no output)" }] };
-        } catch (err: any) {
-          return { content: [{ type: "text", text: `Command failed: ${err.message}` }], isError: true };
-        }
+          if (command.includes(";") || command.includes("&&") || command.includes("||") ||
+              command.includes("|") || command.includes("`") || command.includes("$(")) {
+            return {
+              content: [{ type: "text", text: "Shell operators not allowed" }],
+              isError: true
+            };
+          }
+
+          // SECURITY: Validate cwd to prevent directory traversal attacks
+          const sessionDir = join(SESSIONS_DIR, sessionName);
+          let workDir = cwd ? join(cwd) : sessionDir;
+
+          // Normalize the path to resolve ../ and other traversal attempts
+          const { resolve, normalize } = require("path");
+          workDir = resolve(normalize(workDir));
+
+          // Allowed base directories
+          const allowedBases = [
+            SESSIONS_DIR,           // Session directories
+            GLOBAL_IDENTITY_DIR,    // Global identity for read-only memory access
+          ];
+
+          // Check if workDir is within any allowed base directory
+          const isAllowed = allowedBases.some(base => {
+            const normalizedBase = resolve(normalize(base));
+            return workDir.startsWith(normalizedBase + "/") || workDir === normalizedBase;
+          });
+
+          if (!isAllowed) {
+            return {
+              content: [{ type: "text", text: `Access denied: Working directory '${cwd}' is outside allowed paths. Must be within session directory or global identity.` }],
+              isError: true
+            };
+          }
+
+          // Additional check: prevent accessing other sessions' directories unless owner
+          if (workDir.startsWith(resolve(normalize(SESSIONS_DIR)))) {
+            const relPath = workDir.slice(resolve(normalize(SESSIONS_DIR)).length + 1);
+            const targetSession = relPath.split("/")[0];
+            if (targetSession && targetSession !== sessionName) {
+              const ctx = getContext(sessionName);
+              if (ctx && !ctx.hasCapability("cross.read")) {
+                if (isEnforcementEnabled()) {
+                  return {
+                    content: [{ type: "text", text: `Access denied: Accessing other sessions' directories requires 'cross.read' capability` }],
+                    isError: true,
+                  };
+                } else {
+                  logger.warn(`[a2a-mcp] exec_command: ${sessionName} accessing ${targetSession}'s directory without cross.read capability`);
+                }
+              }
+            }
+          }
+
+          try {
+            const effectiveTimeout = Math.min(timeout, 60000);
+
+            const { stdout, stderr } = await execAsync(command, {
+              cwd: workDir,
+              timeout: effectiveTimeout,
+              maxBuffer: 1024 * 1024,
+            });
+
+            let output = stdout;
+            if (stderr) output += `\n[stderr]\n${stderr}`;
+            if (output.length > 10000) {
+              output = output.substring(0, 10000) + "\n... (truncated)";
+            }
+
+            return { content: [{ type: "text", text: output || "(no output)" }] };
+          } catch (err: any) {
+            return { content: [{ type: "text", text: `Command failed: ${err.message}` }], isError: true };
+          }
+        });
       }
     )
   );

@@ -7,8 +7,18 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, appendFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { SESSIONS_DIR, SESSIONS_FILE } from "../paths.js";
-import type { StreamCallback, StreamMessage, ConversationEntry, ChannelRef } from "../types.js";
+import type { StreamCallback, StreamMessage, ConversationEntry, ChannelRef, InjectionSource } from "../types.js";
 import type { ProviderConfig } from "../types/provider.js";
+import {
+  SecurityContext,
+  createSecurityContext,
+  createCliContext,
+  createInjectionSource,
+  checkSessionAccess,
+  isEnforcementEnabled,
+  storeContext,
+  clearContext,
+} from "../security/index.js";
 import {
   emitInjection,
   emitStream,
@@ -252,6 +262,12 @@ export interface InjectOptions {
   from?: string;
   channel?: ChannelRef;
   images?: string[];  // URLs of images to include in the message
+  /**
+   * Security source for this injection.
+   * If not provided, defaults to CLI source (owner trust level).
+   * Plugins and P2P should always provide this for proper security enforcement.
+   */
+  source?: InjectionSource;
 }
 
 export interface InjectResult {
@@ -315,6 +331,33 @@ async function executeInject(
   const collected: string[] = [];
   let sessionId = existingSessionId || "";
   let cost = 0;
+
+  // SECURITY: Create security context from source (defaults to CLI/owner)
+  const injectionSource = options?.source ?? createInjectionSource("cli");
+  const securityContext = createSecurityContext(injectionSource, name);
+
+  // Store security context for this session (accessible during request)
+  storeContext(securityContext);
+
+  try {
+    // SECURITY: Check session access
+    const accessCheck = checkSessionAccess(injectionSource, name);
+    if (!accessCheck.allowed) {
+      if (isEnforcementEnabled()) {
+        securityContext.recordEvent("access_denied", {
+          allowed: false,
+          reason: accessCheck.reason,
+        });
+        throw new Error(`Access denied: ${accessCheck.reason}`);
+      } else {
+        // Warn mode - log but continue
+        logger.warn(`[security] ${securityContext.requestId}: Access would be denied - ${accessCheck.reason}`);
+      }
+    } else {
+      securityContext.recordEvent("access_granted", {
+        allowed: true,
+      });
+    }
 
   // Check if aborted
   if (abortSignal?.aborted) {
@@ -658,5 +701,9 @@ async function executeInject(
   updateLastTriggerTimestamp(name);
 
   return { response, sessionId, cost };
+  } finally {
+    // SECURITY: Always clear context when request completes
+    clearContext(name);
+  }
 }
 

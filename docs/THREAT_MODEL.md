@@ -2,6 +2,8 @@
 
 **Without Official Permission Required**
 
+> **See Also**: For the comprehensive session security model (trust levels, capabilities, sandboxing), see [SECURITY.md](./SECURITY.md). This document focuses specifically on cryptographic security and network threat analysis.
+
 ## Overview
 
 WOPR is a self-sovereign AI session management system using peer-to-peer networking. This document describes the security architecture, threat vectors, and mitigations.
