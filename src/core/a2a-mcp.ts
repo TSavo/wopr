@@ -1411,18 +1411,19 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "http_fetch",
-      "Make an HTTP request to an external URL.",
+      "Make an HTTP request to an external URL. Supports arbitrary headers including Authorization, API keys, etc.",
       {
         url: z.string().describe("URL to fetch"),
         method: z.string().optional().describe("HTTP method (default: GET)"),
-        headers: z.record(z.string(), z.string()).optional().describe("Request headers"),
-        body: z.string().optional().describe("Request body"),
-        timeout: z.number().optional().describe("Timeout in ms (default: 30000)")
+        headers: z.record(z.string(), z.string()).optional().describe("Request headers as key-value pairs. Examples: Authorization='Bearer token', X-API-Key='key123', Content-Type='application/json'"),
+        body: z.string().optional().describe("Request body (for POST, PUT, PATCH)"),
+        timeout: z.number().optional().describe("Timeout in ms (default: 30000)"),
+        includeHeaders: z.boolean().optional().describe("Include response headers in output (default: false)")
       },
       async (args) => {
         // SECURITY: Check inject.network capability (potential exfiltration vector)
         return withSecurityCheck("http_fetch", sessionName, async () => {
-          const { url, method = "GET", headers = {}, body, timeout = 30000 } = args;
+          const { url, method = "GET", headers = {}, body, timeout = 30000, includeHeaders = false } = args;
 
           try {
             const controller = new AbortController();
@@ -1436,6 +1437,16 @@ export function getA2AMcpServer(sessionName: string): any {
             });
 
             clearTimeout(timeoutId);
+
+            // Collect response headers if requested
+            let responseHeaders = "";
+            if (includeHeaders) {
+              const headerLines: string[] = [];
+              response.headers.forEach((value, key) => {
+                headerLines.push(`${key}: ${value}`);
+              });
+              responseHeaders = headerLines.join("\n") + "\n\n";
+            }
 
             const contentType = response.headers.get("content-type") || "";
             let responseBody: string;
@@ -1451,7 +1462,7 @@ export function getA2AMcpServer(sessionName: string): any {
               responseBody = responseBody.substring(0, 10000) + "\n... (truncated)";
             }
 
-            return { content: [{ type: "text", text: `HTTP ${response.status} ${response.statusText}\n\n${responseBody}` }] };
+            return { content: [{ type: "text", text: `HTTP ${response.status} ${response.statusText}\n${responseHeaders}\n${responseBody}` }] };
           } catch (err: any) {
             return { content: [{ type: "text", text: `HTTP request failed: ${err.message}` }], isError: true };
           }
