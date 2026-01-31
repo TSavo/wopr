@@ -57,6 +57,16 @@ export interface CronJob {
   runAt?: number;
 }
 
+export interface CronHistoryEntry {
+  name: string;
+  session: string;
+  timestamp: number;
+  success: boolean;
+  durationMs: number;
+  error?: string;
+  message: string; // Full message
+}
+
 // Identity types
 export interface Identity {
   publicKey: string;      // Ed25519 for signing

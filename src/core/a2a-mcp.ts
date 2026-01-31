@@ -19,6 +19,7 @@ import {
   addCron,
   removeCron,
   createOnceJob,
+  getCronHistory,
 } from "./cron.js";
 import { eventBus } from "./events.js";
 import {
@@ -1168,13 +1169,76 @@ export function getA2AMcpServer(sessionName: string): any {
       },
       async (args) => {
         // SECURITY: Check cron.manage capability
-        return withSecurityCheck("cron_cancel", sessionName, async () => {
-          const removed = removeCron(args.name);
-          if (!removed) {
-            return { content: [{ type: "text", text: `Cron job '${args.name}' not found` }], isError: true };
-          }
-          return { content: [{ type: "text", text: `Cron job '${args.name}' cancelled` }] };
+        logger.info(`[a2a-mcp] cron_cancel: ${sessionName} cancelling '${args.name}'`);
+        try {
+          return await withSecurityCheck("cron_cancel", sessionName, async () => {
+            const removed = removeCron(args.name);
+            logger.info(`[a2a-mcp] cron_cancel: '${args.name}' removed=${removed}`);
+            if (!removed) {
+              return { content: [{ type: "text", text: `Cron job '${args.name}' not found` }], isError: true };
+            }
+            return { content: [{ type: "text", text: `Cron job '${args.name}' cancelled` }] };
+          });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          logger.error(`[a2a-mcp] cron_cancel failed: ${errMsg}`);
+          return { content: [{ type: "text", text: `Error: ${errMsg}` }], isError: true };
+        }
+      }
+    )
+  );
+
+  tools.push(
+    tool(
+      "cron_history",
+      "View execution history of cron jobs. Shows when jobs ran, success/failure status, duration, and the full message. Useful for verifying scheduled tasks executed as expected.",
+      {
+        name: z.string().optional().describe("Filter by cron job name"),
+        session: z.string().optional().describe("Filter by target session"),
+        limit: z.number().optional().describe("Max entries to return (default 50)"),
+        offset: z.number().optional().describe("Skip this many entries (for pagination)"),
+        since: z.number().optional().describe("Only show entries after this timestamp (ms)"),
+        successOnly: z.boolean().optional().describe("Only show successful executions"),
+        failedOnly: z.boolean().optional().describe("Only show failed executions")
+      },
+      async (args) => {
+        const result = getCronHistory({
+          name: args.name,
+          session: args.session,
+          limit: args.limit,
+          offset: args.offset,
+          since: args.since,
+          successOnly: args.successOnly,
+          failedOnly: args.failedOnly,
         });
+
+        if (result.total === 0) {
+          return { content: [{ type: "text", text: "No cron history found matching filters." }] };
+        }
+
+        const lines: string[] = [];
+        lines.push(`Cron History (showing ${result.entries.length} of ${result.total} entries):`);
+        lines.push("");
+
+        for (const entry of result.entries) {
+          const date = new Date(entry.timestamp).toISOString();
+          const status = entry.success ? "SUCCESS" : "FAILED";
+          const duration = `${entry.durationMs}ms`;
+          lines.push(`[${date}] ${entry.name} -> ${entry.session}`);
+          lines.push(`  Status: ${status} | Duration: ${duration}`);
+          if (entry.error) {
+            lines.push(`  Error: ${entry.error}`);
+          }
+          lines.push(`  Message: ${entry.message}`);
+          lines.push("");
+        }
+
+        if (result.hasMore) {
+          const nextOffset = (args.offset ?? 0) + result.entries.length;
+          lines.push(`--- More entries available. Use offset=${nextOffset} to see next page ---`);
+        }
+
+        return { content: [{ type: "text", text: lines.join("\n") }] };
       }
     )
   );

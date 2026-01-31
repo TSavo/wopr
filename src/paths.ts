@@ -8,6 +8,7 @@ export const PROJECT_SKILLS_DIR = join(process.cwd(), ".wopr", "skills");
 export const SESSIONS_FILE = join(WOPR_HOME, "sessions.json");
 export const REGISTRIES_FILE = join(WOPR_HOME, "registries.json");
 export const CRONS_FILE = join(WOPR_HOME, "crons.json");
+export const CRON_HISTORY_FILE = join(WOPR_HOME, "cron-history.json");
 export const PID_FILE = join(WOPR_HOME, "daemon.pid");
 export const LOG_FILE = join(WOPR_HOME, "daemon.log");
 export const IDENTITY_FILE = join(WOPR_HOME, "identity.json");

@@ -26,7 +26,7 @@ import { providersRouter } from "./routes/providers.js";
 import { setupWebSocket, handleWebSocketMessage, handleWebSocketClose, broadcast } from "./ws.js";
 
 // Core imports for daemon functionality
-import { getCrons, saveCrons, shouldRunCron } from "../core/cron.js";
+import { getCrons, saveCrons, shouldRunCron, addCronHistory } from "../core/cron.js";
 import { inject } from "../core/sessions.js";
 import { loadAllPlugins, shutdownAllPlugins } from "../plugins.js";
 import type { StreamCallback } from "../types.js";
@@ -169,15 +169,41 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
       if (shouldExecute) {
         lastRun[key] = Math.floor(nowTs / 60000);
         daemonLog(`Running: ${cron.name} -> ${cron.session}`);
+        const startTime = Date.now();
         try {
           await inject(cron.session, cron.message, { silent: true, from: "cron" });
-          daemonLog(`Completed: ${cron.name}`);
+          const durationMs = Date.now() - startTime;
+          daemonLog(`Completed: ${cron.name} (${durationMs}ms)`);
+
+          // Log success to history
+          addCronHistory({
+            name: cron.name,
+            session: cron.session,
+            timestamp: startTime,
+            success: true,
+            durationMs,
+            message: cron.message,
+          });
+
           if (cron.once) {
             toRemove.push(cron.name);
             daemonLog(`Auto-removed one-time job: ${cron.name}`);
           }
         } catch (err) {
-          daemonLog(`Error: ${cron.name} - ${err}`);
+          const durationMs = Date.now() - startTime;
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          daemonLog(`Error: ${cron.name} - ${errorMsg}`);
+
+          // Log failure to history
+          addCronHistory({
+            name: cron.name,
+            session: cron.session,
+            timestamp: startTime,
+            success: false,
+            durationMs,
+            error: errorMsg,
+            message: cron.message,
+          });
         }
       }
     }
