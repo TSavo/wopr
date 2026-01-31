@@ -257,6 +257,42 @@ export interface TopicState {
 }
 
 // ============================================================================
+// A2A (Agent-to-Agent) Tool Types
+// ============================================================================
+
+/**
+ * Result from an A2A tool handler
+ */
+export interface A2AToolResult {
+  content: Array<{
+    type: "text" | "image" | "resource";
+    text?: string;
+    data?: string;
+    mimeType?: string;
+  }>;
+  isError?: boolean;
+}
+
+/**
+ * Definition of an A2A tool that plugins can register
+ */
+export interface A2AToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;  // JSON Schema format
+  handler: (args: Record<string, unknown>) => Promise<A2AToolResult>;
+}
+
+/**
+ * Configuration for registering an A2A server (collection of tools)
+ */
+export interface A2AServerConfig {
+  name: string;
+  version?: string;
+  tools: A2AToolDefinition[];
+}
+
+// ============================================================================
 // Plugin System
 // ============================================================================
 
@@ -754,6 +790,10 @@ export interface WOPRPluginContext {
   getSTT(): import("./voice/types.js").STTProvider | null;
   getTTS(): import("./voice/types.js").TTSProvider | null;
   hasVoice(): { stt: boolean; tts: boolean };
+
+  // A2A (Agent-to-Agent) tools - plugins register MCP tools
+  // Example: P2P plugin registers p2p_join_topic, p2p_send_message, etc.
+  registerA2AServer?(config: A2AServerConfig): void;
 
   // Logging
   log: PluginLogger;
