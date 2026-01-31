@@ -110,14 +110,32 @@ export function hasPendingInject(session: string): boolean {
 
 /**
  * Wait for pending inject to complete (for serialization)
+ * Has a 60 second timeout to prevent deadlocks
  */
 async function waitForPendingInject(session: string): Promise<void> {
   const pending = pendingInjects.get(session);
   if (pending) {
+    const waitTime = Date.now() - pending.startTime;
+    logger.info(`[sessions] Waiting for pending inject on ${session} (running for ${Math.round(waitTime / 1000)}s)`);
+
+    // Create a timeout promise to prevent infinite waits (60 seconds)
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`Timeout waiting for pending inject on ${session} after 60s`));
+      }, 60000);
+    });
+
     try {
-      await pending.promise;
+      await Promise.race([pending.promise, timeoutPromise]);
     } catch (e) {
-      // Ignore errors from previous inject
+      const errMsg = e instanceof Error ? e.message : String(e);
+      if (errMsg.includes('Timeout')) {
+        logger.warn(`[sessions] ${errMsg} - proceeding with new inject`);
+        // Cancel the stuck inject and proceed
+        pending.abortController.abort();
+        pendingInjects.delete(session);
+      }
+      // Ignore other errors from previous inject
     }
   }
 }
@@ -403,7 +421,7 @@ async function executeInject(
   };
   
   const assembled = await assembleContext(name, messageInfo);
-  
+
   if (!silent) {
     if (assembled.sources.length > 0) {
       logger.info(`[wopr] Context sources: ${assembled.sources.join(", ")}`);
