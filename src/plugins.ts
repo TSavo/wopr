@@ -66,8 +66,8 @@ import {
   formatMissingRequirements,
 } from "./plugins/requirements.js";
 
-import { homedir } from "os";
-const WOPR_HOME = process.env.WOPR_HOME || join(homedir(), "wopr");
+import { WOPR_HOME } from "./paths.js";
+
 const PLUGINS_DIR = join(WOPR_HOME, "plugins");
 const PLUGINS_FILE = join(WOPR_HOME, "plugins.json");
 const REGISTRIES_FILE = join(WOPR_HOME, "plugin-registries.json");
