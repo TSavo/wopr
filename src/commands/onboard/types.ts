@@ -6,9 +6,8 @@ export interface OnboardConfig {
   workspace?: string;
   provider?: {
     primary?: string;
-    kimi?: { apiKey?: string; baseUrl?: string };
-    anthropic?: { apiKey?: string };
-    openai?: { apiKey?: string };
+    authMethod?: string;
+    [key: string]: any;
   };
   gateway?: {
     port?: number;
@@ -21,7 +20,7 @@ export interface OnboardConfig {
   channels?: string[];
   skills?: string[];
   plugins?: string[];
-  voicePlugins?: string[];  // Installed voice plugins (STT, TTS, channels)
+  voicePlugins?: string[];
   wizard?: {
     lastRunAt?: string;
     lastRunVersion?: string;
@@ -60,13 +59,25 @@ export type OnboardStep = (
   ctx: OnboardContext
 ) => Promise<Partial<OnboardConfig> | void>;
 
-// Available model providers (all via plugins)
-export const AVAILABLE_PROVIDERS = [
-  { id: "kimi", name: "Kimi (Moonshot AI)", models: ["kimi-k2", "kimi-k1.5"], npm: "wopr-plugin-provider-kimi" },
-  { id: "anthropic", name: "Anthropic (Claude)", models: ["claude-sonnet-4", "claude-opus-4"], npm: "wopr-plugin-provider-anthropic" },
-  { id: "openai", name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini"], npm: "wopr-plugin-provider-openai" },
-  { id: "opencode", name: "OpenCode (Windsurf)", models: ["claude-3.5-sonnet", "gpt-4o"], npm: "wopr-plugin-provider-opencode" },
-] as const;
+/**
+ * Provider plugin reference - models come from the plugin itself
+ */
+export interface ProviderRef {
+  id: string;
+  name: string;
+  npm: string;
+}
+
+/**
+ * Available provider plugins - NO hardcoded models
+ * Models are fetched from the plugin after installation
+ */
+export const AVAILABLE_PROVIDERS: ProviderRef[] = [
+  { id: "anthropic", name: "Anthropic (Claude)", npm: "wopr-plugin-provider-anthropic" },
+  { id: "kimi", name: "Kimi (Moonshot AI)", npm: "wopr-plugin-provider-kimi" },
+  { id: "openai", name: "OpenAI", npm: "wopr-plugin-provider-openai" },
+  { id: "opencode", name: "OpenCode (Windsurf)", npm: "wopr-plugin-provider-opencode" },
+];
 
 // Available channel plugins
 export const AVAILABLE_CHANNELS = [

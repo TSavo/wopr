@@ -5,9 +5,6 @@ WORKDIR /app
 # Install git for plugin installation from GitHub
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI globally
-RUN npm install -g @anthropic-ai/claude-code
-
 # Copy package files
 COPY package*.json ./
 

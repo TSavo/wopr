@@ -117,6 +117,9 @@ export interface ModelQueryOptions {
   /** Tools for AI function calling (A2A, etc.) */
   tools?: Tool[];
 
+  /** MCP servers for tool execution (A2A, skills, etc.) */
+  mcpServers?: Record<string, any>;
+
   /** Provider-specific options */
   providerOptions?: Record<string, unknown>;
 }

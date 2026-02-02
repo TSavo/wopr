@@ -2,8 +2,6 @@ import { logger } from "../logger.js";
 /**
  * Core session management and injection with provider routing
  */
-
-import { query } from "@anthropic-ai/claude-agent-sdk";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, appendFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { SESSIONS_DIR, SESSIONS_FILE } from "../paths.js";
@@ -501,31 +499,16 @@ async function executeInject(
       };
       // Save this provider config for the session
       setSessionProvider(name, providerConfig);
+    } else {
+      throw new Error("No AI providers available. Install a provider plugin (e.g., wopr plugin install wopr-plugin-provider-anthropic) and restart.");
     }
-    // If no providers available, will fall back to direct Anthropic SDK query
   }
 
-  let resolvedProvider: any = null;
-  let providerUsed = "anthropic-sdk";
+  // Resolve provider with fallback chain
+  const resolvedProvider = await providerRegistry.resolveProvider(providerConfig);
+  const providerUsed = resolvedProvider.name;
+  if (!silent) logger.info(`[wopr] Using provider: ${providerUsed}`);
 
-  if (providerConfig) {
-    try {
-      // Resolve provider with fallback chain
-      resolvedProvider = await providerRegistry.resolveProvider(providerConfig);
-      providerUsed = resolvedProvider.name;
-      if (!silent) logger.info(`[wopr] Using provider: ${providerUsed}`);
-    } catch (err) {
-      // If provider resolution fails, try fallback to Anthropic SDK directly
-      if (!silent) logger.error(`[wopr] Provider resolution failed: ${err}`);
-      if (!silent) logger.info(`[wopr] Falling back to direct Anthropic SDK query`);
-      resolvedProvider = null;
-    }
-  } else {
-    // No provider configured, use direct Anthropic SDK with OAuth
-    if (!silent) logger.info(`[wopr] No providers configured, using direct Anthropic SDK with OAuth`);
-  }
-
-  // Execute query using resolved provider or fallback to direct query
   // Initialize session functions for the MCP server (deferred to avoid circular imports)
   initSessionFunctions();
 
@@ -535,41 +518,14 @@ async function executeInject(
 
   // Helper to create query with optional session resume
   const createQuery = (resumeSessionId?: string) => {
-    if (resolvedProvider) {
-      // Use provider registry to execute query
-      return resolvedProvider.client.query({
-        prompt: fullMessage,
-        systemPrompt: fullContext,
-        resume: resumeSessionId,
-        model: providerConfig?.model || resolvedProvider.provider.defaultModel,
-        images: messageImages.length > 0 ? messageImages : undefined,
-        mcpServers,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-      });
-    } else {
-      // Fallback: use direct Anthropic SDK query
-      const fallbackOptions: any = {
-        systemPrompt: fullContext,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-      };
-      if (resumeSessionId) {
-        fallbackOptions.resume = resumeSessionId;
-      }
-      if (mcpServers) {
-        fallbackOptions.mcpServers = mcpServers;
-      }
-      // Use session model if configured
-      if (providerConfig?.model) {
-        fallbackOptions.model = providerConfig.model;
-        logger.info(`[wopr] Using session model: ${providerConfig.model}`);
-      }
-      return query({
-        prompt: fullMessage,
-        options: fallbackOptions,
-      });
-    }
+    return resolvedProvider.client.query({
+      prompt: fullMessage,
+      systemPrompt: fullContext,
+      resume: resumeSessionId,
+      model: providerConfig?.model || resolvedProvider.provider.defaultModel,
+      images: messageImages.length > 0 ? messageImages : undefined,
+      mcpServers,
+    });
   };
 
   let q: any = createQuery(existingSessionId);

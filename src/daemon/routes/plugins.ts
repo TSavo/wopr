@@ -16,9 +16,25 @@ import {
   getWebUiExtensions,
   getUiComponents,
   getPluginExtension,
+  loadPlugin,
+  unloadPlugin,
 } from "../../plugins.js";
+import { inject, getSessions } from "../../core/sessions.js";
+import { providerRegistry } from "../../core/providers.js";
+import type { PluginInjectOptions } from "../../types.js";
 
 export const pluginsRouter = new Hono();
+
+// Create injectors for hot-loading plugins (same as daemon/index.ts)
+function createInjectors() {
+  return {
+    inject: async (session: string, message: string, options?: PluginInjectOptions): Promise<string> => {
+      const result = await inject(session, message, { silent: true, ...options });
+      return result.response;
+    },
+    getSessions: () => Object.keys(getSessions()),
+  };
+}
 
 // List installed plugins
 pluginsRouter.get("/", (c) => {
@@ -60,6 +76,14 @@ pluginsRouter.post("/", async (c) => {
     const plugin = await installPlugin(source);
     // Auto-enable plugin after installation
     enablePlugin(plugin.name);
+
+    // Hot-load the plugin immediately (no restart required)
+    const injectors = createInjectors();
+    await loadPlugin(plugin, injectors);
+
+    // Run health check for any newly registered providers
+    await providerRegistry.checkHealth();
+
     return c.json({
       installed: true,
       plugin: {
@@ -68,6 +92,7 @@ pluginsRouter.post("/", async (c) => {
         description: plugin.description,
         source: plugin.source,
         enabled: true,
+        loaded: true,
       },
     }, 201);
   } catch (err: any) {
@@ -75,37 +100,57 @@ pluginsRouter.post("/", async (c) => {
   }
 });
 
-// Remove plugin
+// Remove plugin (hot-unloads first)
 pluginsRouter.delete("/:name", async (c) => {
   const name = c.req.param("name");
 
   try {
+    // Hot-unload the plugin first
+    await unloadPlugin(name);
+
     await removePlugin(name);
-    return c.json({ removed: true });
+    return c.json({ removed: true, unloaded: true });
   } catch (err: any) {
     return c.json({ error: err.message }, 400);
   }
 });
 
-// Enable plugin
-pluginsRouter.post("/:name/enable", (c) => {
+// Enable plugin (hot-loads if not already loaded)
+pluginsRouter.post("/:name/enable", async (c) => {
   const name = c.req.param("name");
 
   try {
+    const plugins = listPlugins();
+    const plugin = plugins.find((p: { name: string }) => p.name === name);
+    if (!plugin) {
+      return c.json({ error: "Plugin not found" }, 404);
+    }
+
     enablePlugin(name);
-    return c.json({ enabled: true });
+
+    // Hot-load the plugin
+    const injectors = createInjectors();
+    await loadPlugin(plugin, injectors);
+
+    // Run health check for any newly registered providers
+    await providerRegistry.checkHealth();
+
+    return c.json({ enabled: true, loaded: true });
   } catch (err: any) {
     return c.json({ error: err.message }, 400);
   }
 });
 
-// Disable plugin
-pluginsRouter.post("/:name/disable", (c) => {
+// Disable plugin (hot-unloads)
+pluginsRouter.post("/:name/disable", async (c) => {
   const name = c.req.param("name");
 
   try {
+    // Hot-unload the plugin first
+    await unloadPlugin(name);
+
     disablePlugin(name);
-    return c.json({ disabled: true });
+    return c.json({ disabled: true, unloaded: true });
   } catch (err: any) {
     return c.json({ error: err.message }, 400);
   }
