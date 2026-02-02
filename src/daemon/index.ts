@@ -138,9 +138,17 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   try {
     const providers = providerRegistry.listProviders();
     daemonLog(`Providers registered: ${providers.map(p => p.id).join(", ") || "none (install provider plugins)"}`);
-    
+    daemonLog(`Provider details before health check: ${JSON.stringify(providers)}`);
+
+    daemonLog(`Starting provider health check...`);
     await providerRegistry.checkHealth();
-    const available = providers.filter(p => p.available).map(p => p.id).join(", ");
+    daemonLog(`Health check complete, re-fetching providers...`);
+
+    // Re-fetch providers AFTER health check to get updated availability
+    const updatedProviders = providerRegistry.listProviders();
+    daemonLog(`Provider details after health check: ${JSON.stringify(updatedProviders)}`);
+
+    const available = updatedProviders.filter(p => p.available).map(p => p.id).join(", ");
     daemonLog(`Provider health check complete. Available: ${available || "none"}`);
   } catch (err) {
     daemonLog(`Warning: Provider health check failed: ${err}`);
