@@ -47,8 +47,12 @@ export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
 export const DEFAULT_BOOTSTRAP_FILENAME = "BOOTSTRAP.md";
 export const DEFAULT_SOUL_EVIL_FILENAME = "SOUL_EVIL.md";
 
-// Default workspace directory
+// Default workspace directory - respects WOPR_HOME for Docker persistence
 export function resolveDefaultWorkspaceDir(): string {
+  const woprHome = process.env.WOPR_HOME;
+  if (woprHome) {
+    return path.join(woprHome, "workspace");
+  }
   return path.join(os.homedir(), ".wopr", "workspace");
 }
 
