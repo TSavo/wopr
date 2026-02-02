@@ -256,6 +256,11 @@ export interface InstallResult {
 export async function installPlugin(source: string): Promise<InstalledPlugin> {
   mkdirSync(PLUGINS_DIR, { recursive: true });
 
+  // Normalize GitHub URLs to github: format
+  if (source.startsWith("https://github.com/")) {
+    source = "github:" + source.replace("https://github.com/", "").replace(/\.git$/, "");
+  }
+
   // Determine source type
   if (source.startsWith("github:")) {
     // GitHub repo
