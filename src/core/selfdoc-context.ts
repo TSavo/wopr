@@ -1,7 +1,7 @@
 import { logger } from "../logger.js";
 /**
  * Self-Documentation Context Provider
- * 
+ *
  * Mirrors Clawdbot/Moltbot's file-based memory system:
  * - SOUL.md: Personality, tone, boundaries
  * - IDENTITY.md: Agent name, vibe, emoji, avatar
@@ -9,16 +9,19 @@ import { logger } from "../logger.js";
  * - USER.md: Facts about the human user
  * - MEMORY.md: Long-term curated memories
  * - HEARTBEAT.md: Periodic monitoring checklist
- * 
+ *
  * These files are automatically read and injected into context
  * at the start of every session, similar to how AGENTS.md instructs
  * Clawdbot to read SOUL.md and USER.md before each session.
+ *
+ * IMPORTANT: Checks GLOBAL_IDENTITY_DIR first for memory files,
+ * then falls back to session-specific directories.
  */
 
 import { readFileSync, existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { ContextProvider, ContextPart, MessageInfo } from "./context.js";
-import { SESSIONS_DIR } from "../paths.js";
+import { SESSIONS_DIR, GLOBAL_IDENTITY_DIR } from "../paths.js";
 
 // Files to load in order of priority (matches Clawdbot's AGENTS.md instructions)
 const SELFDOC_FILES = [
@@ -51,35 +54,79 @@ function readSelfDocFile(session: string, filename: string): string | null {
 }
 
 /**
+ * Read SELF.md - the main memory/identity file
+ * Checks global identity first, then session directory
+ */
+function readSelfFile(session: string): string | null {
+  // Try global identity first
+  const globalPath = join(GLOBAL_IDENTITY_DIR, "memory", "SELF.md");
+  if (existsSync(globalPath)) {
+    try {
+      const content = readFileSync(globalPath, "utf-8");
+      logger.debug(`[selfdoc-context] Loaded SELF.md from global: ${globalPath}`);
+      return content;
+    } catch (err) {
+      logger.error(`[selfdoc-context] Failed to read global SELF.md:`, err);
+    }
+  }
+
+  // Fall back to session directory
+  const sessionPath = join(SESSIONS_DIR, session, "memory", "SELF.md");
+  if (existsSync(sessionPath)) {
+    try {
+      return readFileSync(sessionPath, "utf-8");
+    } catch (err) {
+      logger.error(`[selfdoc-context] Failed to read session SELF.md:`, err);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Read memory/YYYY-MM-DD.md files (last 7 days)
+ * Checks global identity first, then session directory
  */
 function readRecentMemoryFiles(session: string): Array<{date: string; content: string}> {
-  const sessionDir = join(SESSIONS_DIR, session);
-  const memoryDir = join(sessionDir, "memory");
-  
-  if (!existsSync(memoryDir)) {
-    return [];
-  }
-  
   const entries: Array<{date: string; content: string}> = [];
-  
-  try {
-    const files = readdirSync(memoryDir)
-      .filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.md$/))
-      .sort()
-      .slice(-7); // Last 7 days
-    
-    for (const file of files) {
-      const filePath = join(memoryDir, file);
-      const content = readFileSync(filePath, "utf-8");
-      const date = file.replace(".md", "");
-      entries.push({ date, content });
+  const seenDates = new Set<string>();
+
+  // Helper to read from a memory directory
+  const readFromDir = (memoryDir: string, source: string) => {
+    if (!existsSync(memoryDir)) return;
+
+    try {
+      const files = readdirSync(memoryDir)
+        .filter(f => f.match(/^\d{4}-\d{2}-\d{2}\.md$/))
+        .sort();
+
+      for (const file of files) {
+        const date = file.replace(".md", "");
+        if (seenDates.has(date)) continue; // Skip if already loaded from global
+
+        const filePath = join(memoryDir, file);
+        const content = readFileSync(filePath, "utf-8");
+        entries.push({ date, content });
+        seenDates.add(date);
+        logger.debug(`[selfdoc-context] Loaded ${file} from ${source}`);
+      }
+    } catch (err) {
+      logger.error(`[selfdoc-context] Failed to read memory files from ${source}:`, err);
     }
-  } catch (err) {
-    logger.error("[selfdoc-context] Failed to read memory files:", err);
-  }
-  
-  return entries;
+  };
+
+  // Check global identity memory first
+  const globalMemoryDir = join(GLOBAL_IDENTITY_DIR, "memory");
+  readFromDir(globalMemoryDir, "global");
+
+  // Then check session-specific memory
+  const sessionMemoryDir = join(SESSIONS_DIR, session, "memory");
+  readFromDir(sessionMemoryDir, "session");
+
+  // Sort by date and return last 7 days
+  return entries
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-7);
 }
 
 /**
@@ -96,7 +143,7 @@ export const selfDocContextProvider: ContextProvider = {
   async getContext(session: string, _message?: MessageInfo): Promise<ContextPart | null> {
     const parts: string[] = [];
     const loadedFiles: string[] = [];
-    
+
     // Load static self-doc files (AGENTS.md, SOUL.md, etc.)
     for (const filename of SELFDOC_FILES) {
       const content = readSelfDocFile(session, filename);
@@ -106,8 +153,15 @@ export const selfDocContextProvider: ContextProvider = {
         loadedFiles.push(filename);
       }
     }
-    
-    // Load recent memory files (daily notes)
+
+    // Load SELF.md - the main memory/identity file (from global or session)
+    const selfContent = readSelfFile(session);
+    if (selfContent) {
+      parts.push(`## SELF (Long-term Memory)\n\n${selfContent}`);
+      loadedFiles.push("memory/SELF.md");
+    }
+
+    // Load recent memory files (daily notes from global and session)
     const memoryFiles = readRecentMemoryFiles(session);
     if (memoryFiles.length > 0) {
       parts.push("## Recent Memory (last 7 days)\n");
@@ -116,11 +170,13 @@ export const selfDocContextProvider: ContextProvider = {
       }
       loadedFiles.push(`${memoryFiles.length} memory/*.md files`);
     }
-    
+
     if (parts.length === 0) {
       return null;
     }
-    
+
+    logger.info(`[selfdoc-context] Loaded ${loadedFiles.length} memory sources: ${loadedFiles.join(", ")}`);
+
     return {
       content: parts.join("\n\n---\n\n"),
       role: "context",
