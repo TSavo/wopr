@@ -1316,7 +1316,7 @@ async function tryPluginCommand(command: string, args: string[]): Promise<boolea
 
   for (const pluginInfo of installed) {
     try {
-      await loadPlugin(pluginInfo, injectors, { skipRequirementsCheck: true });
+      await loadPlugin(pluginInfo, injectors, { skipRequirementsCheck: true, skipInit: true });
     } catch {
       // Plugin failed to load, continue with others
     }

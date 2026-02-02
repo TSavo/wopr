@@ -26,7 +26,14 @@ import {
   HookOptions,
   A2AServerConfig,
   A2AToolDefinition,
+  ChannelProvider,
 } from "./types.js";
+import {
+  registerChannelProvider as registerChannelProviderCore,
+  unregisterChannelProvider as unregisterChannelProviderCore,
+  getChannelProvider as getChannelProviderCore,
+  getChannelProviders as getChannelProvidersCore,
+} from "./core/channels.js";
 import { registerA2ATool } from "./core/a2a-mcp.js";
 import { z } from "zod";
 import { logMessage as logMessageToSession, cancelInject as cancelSessionInject } from "./core/sessions.js";
@@ -622,6 +629,23 @@ function createPluginContext(
       };
     },
 
+    // Channel providers - channel plugins register themselves for cross-plugin protocol commands
+    registerChannelProvider(provider: ChannelProvider) {
+      registerChannelProviderCore(provider);
+    },
+
+    unregisterChannelProvider(id: string) {
+      unregisterChannelProviderCore(id);
+    },
+
+    getChannelProvider(id: string): ChannelProvider | undefined {
+      return getChannelProviderCore(id);
+    },
+
+    getChannelProviders(): ChannelProvider[] {
+      return getChannelProvidersCore();
+    },
+
     // A2A tools - plugins register MCP tools for agent-to-agent communication
     registerA2AServer(config: A2AServerConfig) {
       registerA2AServerImpl(config);
@@ -866,6 +890,8 @@ export interface LoadPluginOptions {
   skipRequirementsCheck?: boolean;
   /** Prompt function for interactive install */
   promptInstall?: (message: string) => Promise<boolean>;
+  /** Skip plugin init (for CLI commands that just need the plugin module) */
+  skipInit?: boolean;
 }
 
 export async function loadPlugin(
@@ -938,8 +964,8 @@ export async function loadPlugin(
   // Store
   loadedPlugins.set(installed.name, { plugin, context });
 
-  // Initialize if needed
-  if (plugin.init) {
+  // Initialize if needed (skip for CLI commands)
+  if (plugin.init && !options.skipInit) {
     await plugin.init(context);
   }
 

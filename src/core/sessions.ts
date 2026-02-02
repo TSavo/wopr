@@ -286,6 +286,15 @@ export interface InjectOptions {
    * Plugins and P2P should always provide this for proper security enforcement.
    */
   source?: InjectionSource;
+  /**
+   * Control which context providers to use.
+   * - undefined: use all enabled providers (default)
+   * - string[]: only use these named providers (e.g., ['skills', 'bootstrap_files'])
+   *
+   * Tip: Use ['skills', 'bootstrap_files', 'session_system'] to get system context
+   * but skip conversation_history and channel_history (when plugin handles its own context).
+   */
+  contextProviders?: string[];
 }
 
 export interface InjectResult {
@@ -413,14 +422,18 @@ async function executeInject(
   }
 
   // Assemble context using the new provider system
+  // Plugins can control which providers to use via contextProviders option
   const messageInfo: MessageInfo = {
     content: messageText,
     from,
     channel,
     timestamp: Date.now()
   };
-  
-  const assembled = await assembleContext(name, messageInfo);
+
+  // Plugins can control which providers to use via contextProviders option
+  const assembled = await assembleContext(name, messageInfo, {
+    providers: options?.contextProviders
+  });
 
   if (!silent) {
     if (assembled.sources.length > 0) {
@@ -468,7 +481,9 @@ async function executeInject(
 
   // Build full message (context + user message)
   // Context from providers goes before the actual message for conversation flow
-  const fullMessage = assembled.context
+  // EXCEPT for slash commands - they must be at the start to be recognized by the SDK
+  const isSlashCommand = processedMessage.trim().startsWith('/');
+  const fullMessage = (assembled.context && !isSlashCommand)
     ? `${assembled.context}\n\n${processedMessage}`
     : processedMessage;
   
@@ -576,6 +591,21 @@ async function executeInject(
           saveSessionId(name, sessionId);
           if (!silent) logger.info(`[wopr] Session ID: ${sessionId}`);
         }
+        // Log compact_metadata for debugging
+        if (msg.subtype === "compact_boundary" && msg.compact_metadata) {
+          logger.info(`[inject] compact_metadata: ${JSON.stringify(msg.compact_metadata)}`);
+        }
+        // Pass all system messages to onStream (including compact_boundary, status, etc.)
+        {
+          const streamMsg: StreamMessage = {
+            type: "system",
+            content: msg.subtype || "",
+            subtype: msg.subtype,
+            metadata: msg.compact_metadata || msg.metadata || undefined
+          };
+          if (onStream) onStream(streamMsg);
+          emitStream(name, from, streamMsg);
+        }
         break;
       case "assistant":
         logger.info(`[inject] Processing assistant msg, content blocks: ${msg.message?.content?.length || 0}`);
@@ -646,6 +676,17 @@ async function executeInject(
               sessionId = msg.session_id;
               saveSessionId(name, sessionId);
               if (!silent) logger.info(`[wopr] New session ID: ${sessionId}`);
+            }
+            // Pass all system messages to onStream
+            {
+              const streamMsg: StreamMessage = {
+                type: "system",
+                content: msg.subtype || "",
+                subtype: msg.subtype,
+                metadata: msg.compact_metadata || msg.metadata || undefined
+              };
+              if (onStream) onStream(streamMsg);
+              emitStream(name, from, streamMsg);
             }
             break;
           case "assistant":

@@ -15,6 +15,7 @@ import {
   listRegistries,
   getWebUiExtensions,
   getUiComponents,
+  getPluginExtension,
 } from "../../plugins.js";
 
 export const pluginsRouter = new Hono();
@@ -144,4 +145,39 @@ pluginsRouter.delete("/registries/:name", (c) => {
   const name = c.req.param("name");
   removeRegistry(name);
   return c.json({ removed: true });
+});
+
+// Discord owner claim - call the Discord plugin's claimOwnership function
+pluginsRouter.post("/discord/claim", async (c) => {
+  const body = await c.req.json();
+  const { code } = body;
+
+  if (!code) {
+    return c.json({ error: "code is required" }, 400);
+  }
+
+  // Get the Discord extension
+  interface DiscordExtension {
+    claimOwnership: (code: string) => Promise<{ success: boolean; userId?: string; username?: string; error?: string }>;
+  }
+  const discordExt = getPluginExtension<DiscordExtension>("discord");
+
+  if (!discordExt) {
+    return c.json({ error: "Discord plugin not loaded" }, 404);
+  }
+
+  if (!discordExt.claimOwnership) {
+    return c.json({ error: "Discord plugin does not support ownership claiming" }, 400);
+  }
+
+  const result = await discordExt.claimOwnership(code);
+  if (result.success) {
+    return c.json({
+      success: true,
+      userId: result.userId,
+      username: result.username,
+    });
+  } else {
+    return c.json({ success: false, error: result.error }, 400);
+  }
 });

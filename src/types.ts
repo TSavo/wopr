@@ -328,9 +328,11 @@ export interface PluginCommand {
 
 // Streaming message from Claude
 export interface StreamMessage {
-  type: "text" | "tool_use" | "complete" | "error";
+  type: "text" | "tool_use" | "complete" | "error" | "system";
   content: string;
   toolName?: string;
+  subtype?: string;  // For system messages: "init", "compact_boundary", "status", etc.
+  metadata?: Record<string, unknown>;  // For system message metadata (e.g., compact_metadata)
 }
 
 export type StreamCallback = (msg: StreamMessage) => void;
@@ -801,6 +803,14 @@ export interface WOPRPluginContext {
   getTTS(): import("./voice/types.js").TTSProvider | null;
   hasVoice(): { stt: boolean; tts: boolean };
 
+  // Channel providers - channel plugins (Discord, Slack, etc.) register themselves
+  // so other plugins (like P2P) can add commands and message parsers.
+  // Example: P2P plugin registers /friend command on all channels
+  registerChannelProvider(provider: ChannelProvider): void;
+  unregisterChannelProvider(id: string): void;
+  getChannelProvider(id: string): ChannelProvider | undefined;
+  getChannelProviders(): ChannelProvider[];
+
   // A2A (Agent-to-Agent) tools - plugins register MCP tools
   // Example: P2P plugin registers p2p_join_topic, p2p_send_message, etc.
   registerA2AServer?(config: A2AServerConfig): void;
@@ -859,3 +869,73 @@ export const EXIT_REJECTED = 2;
 export const EXIT_INVALID = 3;
 export const EXIT_RATE_LIMITED = 4;
 export const EXIT_VERSION_MISMATCH = 5;
+
+// ============================================================================
+// Channel Provider System (for cross-plugin protocol commands)
+// ============================================================================
+
+/**
+ * Context passed to channel command handlers
+ */
+export interface ChannelCommandContext {
+  channel: string;           // Channel identifier (e.g., Discord channel ID)
+  channelType: string;       // Channel type (e.g., "discord", "slack")
+  sender: string;            // Username/ID of sender
+  args: string[];            // Command arguments
+  reply: (msg: string) => Promise<void>;  // Reply to the channel
+  getBotUsername: () => string;           // Get the bot's username in this channel
+}
+
+/**
+ * Context passed to channel message parsers
+ */
+export interface ChannelMessageContext {
+  channel: string;
+  channelType: string;
+  sender: string;
+  content: string;
+  reply: (msg: string) => Promise<void>;
+  getBotUsername: () => string;
+}
+
+/**
+ * A command that can be registered on channel providers
+ */
+export interface ChannelCommand {
+  name: string;                    // Command name (e.g., "friend")
+  description: string;
+  handler: (ctx: ChannelCommandContext) => Promise<void>;
+}
+
+/**
+ * A message parser that watches channel messages
+ */
+export interface ChannelMessageParser {
+  id: string;
+  pattern: RegExp | ((msg: string) => boolean);
+  handler: (ctx: ChannelMessageContext) => Promise<void>;
+}
+
+/**
+ * Channel provider interface - plugins implement this to expose their channels
+ * to other plugins for registering protocol-level commands and parsers.
+ */
+export interface ChannelProvider {
+  id: string;                      // "discord", "slack", "telegram"
+
+  // Command registration
+  registerCommand(cmd: ChannelCommand): void;
+  unregisterCommand(name: string): void;
+  getCommands(): ChannelCommand[];
+
+  // Message watching
+  addMessageParser(parser: ChannelMessageParser): void;
+  removeMessageParser(id: string): void;
+  getMessageParsers(): ChannelMessageParser[];
+
+  // Send to channel
+  send(channel: string, content: string): Promise<void>;
+
+  // Get bot username for this provider
+  getBotUsername(): string;
+}
