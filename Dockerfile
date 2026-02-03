@@ -2,8 +2,11 @@ FROM node:lts-slim
 
 WORKDIR /app
 
-# Install git for plugin installation from GitHub
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Install git and sudo
+RUN apt-get update && apt-get install -y git sudo && rm -rf /var/lib/apt/lists/*
+
+# Make node user a passwordless sudoer
+RUN echo "node ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/node && chmod 0440 /etc/sudoers.d/node
 
 # Copy package files
 COPY package*.json ./

@@ -286,6 +286,8 @@ GET /plugins/components
 
 ## Identity
 
+> **Note:** Identity, Peers, Access Control, and Discovery endpoints require the `wopr-plugin-p2p` plugin.
+
 ### Get Identity
 
 ```http
@@ -646,6 +648,8 @@ Content-Type: application/json
 
 ## Providers
 
+Built-in providers: `anthropic` (Claude), `codex` (OpenAI Codex). Additional providers available via plugins.
+
 ### List Providers
 
 ```http
@@ -657,16 +661,16 @@ GET /providers
 {
   "providers": [
     {
-      "id": "kimi",
-      "name": "Moonshot AI Kimi",
-      "available": true,
-      "defaultModel": "kimi-k2"
-    },
-    {
       "id": "anthropic",
       "name": "Anthropic Claude",
+      "available": true,
+      "defaultModel": "claude-sonnet-4-20250514"
+    },
+    {
+      "id": "codex",
+      "name": "OpenAI Codex",
       "available": false,
-      "defaultModel": "claude-3-opus-20240229"
+      "defaultModel": "codex"
     }
   ]
 }

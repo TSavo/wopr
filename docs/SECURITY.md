@@ -257,6 +257,8 @@ Check if a specific action is allowed before attempting it.
 
 ## P2P Security Hardening
 
+> **Note:** P2P security features require the `wopr-plugin-p2p` plugin.
+
 The P2P plugin includes several security measures:
 
 ### Auto-Accept Disabled

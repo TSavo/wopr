@@ -58,6 +58,31 @@ export interface WoprConfig {
    *       providers.anthropic.model = "claude-opus-4-5-20251101"
    */
   providers?: Record<string, ProviderDefaults>;
+  /**
+   * Sandbox configuration for Docker-based isolation
+   */
+  sandbox?: {
+    /** Sandboxing mode: off, non-main (all except main session), all */
+    mode?: "off" | "non-main" | "all";
+    /** Sandbox scope: session (per-session container) or shared (one container) */
+    scope?: "session" | "shared";
+    /** Workspace access: none, ro (read-only), rw (read-write) */
+    workspaceAccess?: "none" | "ro" | "rw";
+    /** Root directory for sandbox workspaces */
+    workspaceRoot?: string;
+    /** Docker container configuration */
+    docker?: {
+      image?: string;
+      memory?: string;
+      cpus?: number;
+      network?: string;
+    };
+    /** Tool policy for sandboxed sessions */
+    tools?: {
+      allow?: string[];
+      deny?: string[];
+    };
+  };
 }
 
 const DEFAULT_CONFIG: WoprConfig = {

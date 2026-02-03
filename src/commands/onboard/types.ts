@@ -17,6 +17,11 @@ export interface OnboardConfig {
       token?: string;
     };
   };
+  sandbox?: {
+    enabled?: boolean;
+    mode?: "off" | "non-main" | "all";
+    workspaceAccess?: "none" | "ro" | "rw";
+  };
   channels?: string[];
   skills?: string[];
   plugins?: string[];

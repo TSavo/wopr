@@ -4,9 +4,15 @@
 
 > **See Also**: For the comprehensive session security model (trust levels, capabilities, sandboxing), see [SECURITY.md](./SECURITY.md). This document focuses specifically on cryptographic security and network threat analysis.
 
+> **Note:** P2P functionality is implemented by the `wopr-plugin-p2p` plugin. Install it with:
+> ```bash
+> wopr plugin install wopr-plugin-p2p
+> wopr plugin enable wopr-plugin-p2p
+> ```
+
 ## Overview
 
-WOPR is a self-sovereign AI session management system using peer-to-peer networking. This document describes the security architecture, threat vectors, and mitigations.
+WOPR is a self-sovereign AI session management system with optional peer-to-peer networking. This document describes the security architecture, threat vectors, and mitigations for P2P features.
 
 ## Protocol Version
 

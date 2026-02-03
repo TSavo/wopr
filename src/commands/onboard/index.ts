@@ -10,6 +10,7 @@ import type { OnboardOptions, OnboardRuntime, OnboardConfig, OnboardContext } fr
 // Import steps
 import { welcomeStep } from "./steps/01-welcome.js";
 import { securityStep } from "./steps/02-security.js";
+import { sandboxStep } from "./steps/02b-sandbox.js";
 import { configCheckStep } from "./steps/03-config-check.js";
 import { flowStep } from "./steps/04-flow.js";
 import { workspaceStep } from "./steps/05-workspace.js";
@@ -23,6 +24,7 @@ import { finalizeStep } from "./steps/10-finalize.js";
 const steps = [
   welcomeStep,
   securityStep,
+  sandboxStep,
   configCheckStep,
   flowStep,
   workspaceStep,

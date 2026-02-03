@@ -122,7 +122,35 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
   // Create injectors for plugins
   const injectors = {
     inject: async (session: string, message: string, options?: import("../types.js").PluginInjectOptions): Promise<string> => {
-      const result = await inject(session, message, { silent: true, ...options });
+      // If source is provided, use it directly
+      // Otherwise, parse the `from` field to create an appropriate security source
+      let source = options?.source;
+      if (!source && options?.from) {
+        const { createInjectionSource } = await import("../security/types.js");
+        const from = options.from;
+
+        if (from.startsWith("p2p:")) {
+          // P2P injection - parse peer key and create untrusted source
+          const peerKey = from.slice(4); // Remove "p2p:" prefix
+          source = createInjectionSource("p2p", {
+            trustLevel: "untrusted", // P2P peers are untrusted by default
+            identity: { publicKey: peerKey },
+          });
+          daemonLog(`[security] Created P2P source (untrusted) for peer ${peerKey.slice(0, 8)}...`);
+        } else if (from === "cron") {
+          source = createInjectionSource("cron");
+        } else if (from === "api") {
+          source = createInjectionSource("api", { trustLevel: "semi-trusted" });
+        } else if (from.startsWith("plugin:")) {
+          const pluginName = from.slice(7);
+          source = createInjectionSource("plugin", {
+            identity: { pluginName },
+          });
+        }
+        // else: defaults to CLI (owner) in sessions.ts
+      }
+
+      const result = await inject(session, message, { silent: true, ...options, source });
       return result.response;
     },
     getSessions: () => {
@@ -133,6 +161,15 @@ export async function startDaemon(config: DaemonConfig = {}): Promise<void> {
 
   // Load plugins (this is where providers register themselves)
   await loadAllPlugins(injectors);
+
+  // Initialize memory system hooks (session save on destroy)
+  try {
+    const { initMemoryHooks } = await import("../memory/index.js");
+    initMemoryHooks();
+    daemonLog("Memory system hooks initialized");
+  } catch (err) {
+    daemonLog(`Warning: Memory hooks initialization failed: ${err}`);
+  }
 
   // Check provider health after plugins have registered
   try {

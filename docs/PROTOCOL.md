@@ -5,6 +5,12 @@
 **Version:** 2
 **Min Compatible Version:** 1
 
+> **Note:** This protocol is implemented by the `wopr-plugin-p2p` plugin. Install it with:
+> ```bash
+> wopr plugin install wopr-plugin-p2p
+> wopr plugin enable wopr-plugin-p2p
+> ```
+
 ## Overview
 
 WOPR uses JSON messages over Hyperswarm connections. All messages are signed and most are encrypted.

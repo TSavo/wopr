@@ -30,9 +30,15 @@ export const finalizeStep: OnboardStep = async (ctx: OnboardContext) => {
   const webUiUrl = `http://127.0.0.1:${port}`;
   const authedUrl = token ? `${webUiUrl}?token=${encodeURIComponent(token)}` : webUiUrl;
   
+  // Build sandbox status
+  const sandboxStatus = finalConfig.sandbox?.enabled
+    ? pc.green("✓") + ` Sandbox: ${finalConfig.sandbox.mode} (${finalConfig.sandbox.workspaceAccess || "ro"})`
+    : pc.dim("○ Sandbox: Disabled");
+
   await note([
     pc.green("✓") + " Workspace configured",
     finalConfig.provider?.primary ? pc.green("✓") + " AI provider: " + finalConfig.provider.primary : pc.yellow("○") + " AI provider: Not configured",
+    sandboxStatus,
     finalConfig.channels?.length ? pc.green("✓") + " Channels: " + finalConfig.channels.join(", ") : pc.dim("○ Channels: None"),
     finalConfig.skills?.length ? pc.green("✓") + " Skills: " + finalConfig.skills.join(", ") : pc.dim("○ Skills: None"),
     pc.green("✓") + " Gateway configured",
@@ -100,6 +106,7 @@ export const finalizeStep: OnboardStep = async (ctx: OnboardContext) => {
     pc.cyan("wopr daemon start") + "     Start the gateway daemon",
     pc.cyan("wopr daemon stop") + "      Stop the gateway daemon",
     pc.cyan("wopr status") + "           Check system status",
+    pc.cyan("wopr sandbox status") + "   Check sandbox containers",
     pc.cyan("wopr configure") + "        Reconfigure settings",
     pc.cyan("wopr onboard") + "          Run this wizard again",
     "",

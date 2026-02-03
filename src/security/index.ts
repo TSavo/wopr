@@ -47,6 +47,11 @@ export {
   getSessionConfig,
   getSessionAccess,
 
+  // Session indexable (transcript visibility in memory search)
+  DEFAULT_INDEXABLE_BY_TRUST,
+  getSessionIndexable,
+  canIndexSession,
+
   // Events
   type SecurityEventType,
   type SecurityEvent,
@@ -121,6 +126,10 @@ export {
   getSandboxStatus,
   listSandboxes,
   cleanupAllSandboxes,
+  // New security-aware sandbox functions
+  getSandboxForSession,
+  isSessionSandboxed,
+  type SandboxContext,
 } from "./sandbox.js";
 
 // Export gateway functions

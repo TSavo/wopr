@@ -2,6 +2,12 @@
 
 **Without Official Permission Required**
 
+> **Note:** Discovery is implemented by the `wopr-plugin-p2p` plugin. Install it with:
+> ```bash
+> wopr plugin install wopr-plugin-p2p
+> wopr plugin enable wopr-plugin-p2p
+> ```
+
 ## Overview
 
 Discovery lets WOPR peers find each other without prior knowledge of public keys. It's ephemeral, topic-based, and spam-resistant by design.

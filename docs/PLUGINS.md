@@ -20,13 +20,39 @@ Connect WOPR to external messaging platforms:
 
 ### Provider Plugins
 
-AI model provider integrations:
+AI model provider integrations. Note that `anthropic` and `codex` providers are built-in.
 
 | Plugin | Provider | Status | Repository |
 |--------|----------|--------|------------|
 | `wopr-plugin-provider-kimi` | Moonshot AI Kimi | ✅ Ready | [TSavo/wopr-plugin-provider-kimi](https://github.com/TSavo/wopr-plugin-provider-kimi) |
-| `wopr-plugin-provider-openai` | OpenAI | ✅ Ready | [TSavo/wopr-plugin-provider-openai](https://github.com/TSavo/wopr-plugin-provider-openai) |
+| `wopr-plugin-provider-openai` | OpenAI GPT | ✅ Ready | [TSavo/wopr-plugin-provider-openai](https://github.com/TSavo/wopr-plugin-provider-openai) |
 | `wopr-plugin-provider-anthropic` | Anthropic Claude | ✅ Ready | [TSavo/wopr-plugin-provider-anthropic](https://github.com/TSavo/wopr-plugin-provider-anthropic) |
+
+### P2P Plugin
+
+| Plugin | Purpose | Status | Repository |
+|--------|---------|--------|------------|
+| `wopr-plugin-p2p` | P2P networking, identity, invites, discovery | ✅ Ready | [TSavo/wopr-plugin-p2p](https://github.com/TSavo/wopr-plugin-p2p) |
+
+The P2P plugin adds:
+- Cryptographic identity (Ed25519/X25519 keypairs)
+- End-to-end encrypted messaging
+- Signed invites bound to recipient public keys
+- DHT-based peer discovery (Hyperswarm)
+- Forward secrecy with ephemeral keys
+
+Commands added by the P2P plugin:
+- `wopr id init` - Generate identity
+- `wopr id` - Show your ID
+- `wopr id rotate` - Rotate keys
+- `wopr invite <pubkey> <session>` - Create invite
+- `wopr invite claim <token>` - Claim invite
+- `wopr access` - List access grants
+- `wopr revoke <peer>` - Revoke access
+- `wopr discover join <topic>` - Join discovery topic
+- `wopr discover peers` - List discovered peers
+- `wopr discover connect <peer>` - Connect to peer
+- `wopr inject <peer>:<session> <message>` - Send to peer
 
 ### Utility Plugins
 
@@ -64,11 +90,10 @@ wopr onboard
 ```
 
 This interactive wizard will:
-1. Guide you through identity setup
-2. Configure AI providers
-3. Set up channel plugins (Discord, Slack, Telegram, etc.)
-4. Configure P2P networking
-5. Set up skills and middleware
+1. Configure AI providers (API keys)
+2. Set up channel plugins (Discord, Slack, Telegram, etc.)
+3. Configure P2P networking (requires wopr-plugin-p2p)
+4. Set up skills and middleware
 
 ## Plugin Development
 

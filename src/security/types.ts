@@ -397,6 +397,14 @@ export interface SessionConfig {
   /** Access rules - who can inject into this session */
   access?: AccessPattern[];
 
+  /**
+   * Indexable rules - which session transcripts THIS session can see in memory search
+   * - ["*"] - can see all sessions' transcripts
+   * - ["self"] - can only see own transcripts
+   * - ["self", "session:api-.*"] - self + regex match on session names
+   */
+  indexable?: AccessPattern[];
+
   /** Capabilities for code running in this session */
   capabilities?: Capability[];
 
@@ -405,7 +413,23 @@ export interface SessionConfig {
 
   /** Sandbox configuration override */
   sandbox?: Partial<SandboxConfig>;
+
+  /** Human-readable description of the session */
+  description?: string;
 }
+
+/**
+ * Default indexable patterns by trust level
+ * Controls what session transcripts a session can see in memory search
+ * - owner/trusted: ["*"] - can search all session transcripts
+ * - semi-trusted/untrusted (P2P): ["self"] - can only search own transcripts
+ */
+export const DEFAULT_INDEXABLE_BY_TRUST: Record<TrustLevel, AccessPattern[]> = {
+  owner: ["*"],
+  trusted: ["*"],
+  "semi-trusted": ["self"],
+  untrusted: ["self"],
+};
 
 /**
  * Hook configuration
@@ -761,4 +785,77 @@ export function getSessionAccess(
 
   // Default: only trusted and above can access
   return ["trust:trusted"];
+}
+
+/**
+ * Get the effective indexable patterns for a session
+ * Controls which session transcripts this session can see in memory search
+ */
+export function getSessionIndexable(
+  config: SecurityConfig,
+  sessionName: string,
+  trustLevel: TrustLevel = "owner"
+): AccessPattern[] {
+  const sessionConfig = getSessionConfig(config, sessionName);
+
+  // Session-specific indexable rules take precedence
+  if (sessionConfig?.indexable) {
+    return sessionConfig.indexable;
+  }
+
+  // Fall back to trust-level default
+  return DEFAULT_INDEXABLE_BY_TRUST[trustLevel];
+}
+
+/**
+ * Check if a session can index (see in search) another session's transcripts
+ *
+ * @param searcherSession - The session performing the search
+ * @param targetSession - The session whose transcripts are being checked
+ * @param patterns - The searcher's indexable patterns
+ * @returns true if the searcher can see the target's transcripts
+ */
+export function canIndexSession(
+  searcherSession: string,
+  targetSession: string,
+  patterns: AccessPattern[]
+): boolean {
+  for (const pattern of patterns) {
+    // Wildcard matches all sessions
+    if (pattern === "*") {
+      return true;
+    }
+
+    // "self" matches only the searcher's own session
+    if (pattern === "self") {
+      if (searcherSession === targetSession) {
+        return true;
+      }
+      continue;
+    }
+
+    // "session:pattern" - regex match on session name
+    if (pattern.startsWith("session:")) {
+      const regexStr = pattern.slice(8);
+      try {
+        const regex = new RegExp(`^${regexStr}$`);
+        if (regex.test(targetSession)) {
+          return true;
+        }
+      } catch {
+        // Invalid regex, try exact match
+        if (regexStr === targetSession) {
+          return true;
+        }
+      }
+      continue;
+    }
+
+    // Exact session name match
+    if (pattern === targetSession) {
+      return true;
+    }
+  }
+
+  return false;
 }

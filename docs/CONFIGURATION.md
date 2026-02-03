@@ -26,9 +26,9 @@ Configuration is loaded from (in order of precedence):
 
 | Variable | Description | Required For |
 |----------|-------------|--------------|
-| `ANTHROPIC_API_KEY` | Claude API key | Anthropic provider |
-| `KIMI_API_KEY` | Moonshot AI key | Kimi provider |
-| `OPENAI_API_KEY` | OpenAI API key | OpenAI provider |
+| `ANTHROPIC_API_KEY` | Claude API key | Anthropic provider (built-in) |
+| `OPENAI_API_KEY` | OpenAI API key | Codex provider (built-in) |
+| `KIMI_API_KEY` | Moonshot AI key | Kimi provider (plugin) |
 
 ### Optional
 
@@ -155,6 +155,8 @@ curl -X PUT http://localhost:7437/config/plugins.data.discord \
 ```
 
 ## Discovery Configuration
+
+> **Note:** Discovery requires the `wopr-plugin-p2p` plugin.
 
 ### Topics
 

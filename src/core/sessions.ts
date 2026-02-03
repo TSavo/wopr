@@ -230,7 +230,7 @@ export function listSessions(): Session[] {
 }
 
 // Conversation log functions
-function getConversationLogPath(name: string): string {
+export function getConversationLogPath(name: string): string {
   return join(SESSIONS_DIR, `${name}.conversation.jsonl`);
 }
 

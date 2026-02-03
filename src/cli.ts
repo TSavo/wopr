@@ -139,6 +139,41 @@ Usage:
   wopr context disable <name>                Disable context provider
   wopr context priority <name> <n>           Set context provider priority
 
+  wopr security status                       Show security status and enforcement mode
+  wopr security enforcement <mode>           Set enforcement mode (off|warn|enforce)
+
+  wopr security sessions                     List all session security configs
+  wopr security session <name>               Show session security config
+  wopr security session <name> <prop> <val>  Set session property
+    Properties:
+      indexable <patterns>  What transcripts this session can see in search
+      access <patterns>     Who can inject into this session
+      capabilities <caps>   What this session can do
+    Examples:
+      wopr security session main indexable "*"              # See all transcripts
+      wopr security session p2p-alice indexable self        # Only own transcripts
+      wopr security session gateway access "trust:untrusted"  # Allow untrusted
+      wopr security session main capabilities "*"           # Full capabilities
+
+  wopr security p2p                          Show P2P security settings
+  wopr security p2p discovery-trust <level>  Set trust for discovered peers
+  wopr security p2p auto-accept <true|false> Enable/disable auto-accept
+
+  wopr security audit                        Show audit settings
+  wopr security audit enable                 Enable audit logging
+  wopr security audit disable                Disable audit logging
+
+  wopr security sources                      List source-specific configs
+  wopr security defaults                     Show default security policy
+
+  wopr sandbox status                        Show sandbox status and containers
+  wopr sandbox list                          List all sandbox containers
+  wopr sandbox create <session>              Create sandbox for a session
+  wopr sandbox destroy <session>             Destroy sandbox for a session
+  wopr sandbox exec <session> <command>      Execute command in sandbox
+  wopr sandbox prune                         Remove all idle containers
+  wopr sandbox recreate <session>            Recreate container (apply config changes)
+
 Environment:
   WOPR_HOME                              Base directory (default: ~/wopr)
   ANTHROPIC_API_KEY                      API key for Claude (Anthropic)
@@ -1278,6 +1313,387 @@ function parseFlags(args: string[]): { flags: Record<string, string | boolean>; 
       }
       default:
         help();
+    }
+  } else if (command === "security") {
+    // Security configuration commands
+    const { getSecurityConfig, saveSecurityConfig, CAPABILITY_PROFILES, DEFAULT_SANDBOX_BY_TRUST } = await import("./security/index.js");
+
+    if (subcommand === "status") {
+      // Show overall security status
+      const config = getSecurityConfig();
+      logger.info("WOPR Security Status");
+      logger.info("====================");
+      logger.info(`Enforcement: ${config.enforcement}`);
+      logger.info(`Default access: ${(config.defaultAccess || ["trust:trusted"]).join(", ")}`);
+      logger.info(`Sessions configured: ${Object.keys(config.sessions || {}).length}`);
+      logger.info(`Audit enabled: ${config.audit?.enabled ?? false}`);
+      if (config.p2p) {
+        logger.info(`P2P discovery trust: ${config.p2p.discoveryTrust}`);
+        logger.info(`P2P auto-accept: ${config.p2p.autoAccept}`);
+      }
+    } else if (subcommand === "enforcement") {
+      const mode = args[0];
+      if (!mode) {
+        const config = getSecurityConfig();
+        logger.info(`Current enforcement mode: ${config.enforcement}`);
+        logger.info("Modes: off, warn, enforce");
+      } else if (mode === "off" || mode === "warn" || mode === "enforce") {
+        const config = getSecurityConfig();
+        config.enforcement = mode;
+        saveSecurityConfig(config);
+        logger.info(`Enforcement mode set to: ${mode}`);
+      } else {
+        logger.error("Invalid mode. Use: off, warn, or enforce");
+        process.exit(1);
+      }
+    } else if (subcommand === "sessions") {
+      // List all session security configs
+      const config = getSecurityConfig();
+      const sessions = config.sessions || {};
+      const sessionNames = Object.keys(sessions);
+
+      if (sessionNames.length === 0) {
+        logger.info("No session security configs defined.");
+        logger.info("Sessions inherit defaults based on trust level.");
+      } else {
+        logger.info("Session security configs:");
+        logger.info("Session           | Access                    | Indexable           | Capabilities");
+        logger.info("------------------|---------------------------|---------------------|------------------");
+        for (const name of sessionNames) {
+          const sess = sessions[name];
+          const access = sess.access?.join(",") || "(default)";
+          const indexable = sess.indexable?.join(",") || "(default)";
+          const caps = sess.capabilities?.join(",") || "(default)";
+          logger.info(`${name.padEnd(17)} | ${access.padEnd(25)} | ${indexable.padEnd(19)} | ${caps}`);
+        }
+      }
+    } else if (subcommand === "session") {
+      const sessionName = args[0];
+      if (!sessionName) {
+        logger.error("Usage: wopr security session <name> [property <value>]");
+        process.exit(1);
+      }
+
+      const property = args[1];
+      const value = args[2];
+
+      if (!property) {
+        // Show session security config
+        const config = getSecurityConfig();
+        const sess = config.sessions?.[sessionName];
+
+        if (!sess) {
+          logger.info(`Session "${sessionName}" has no explicit security config.`);
+          logger.info("It inherits defaults based on trust level:");
+          logger.info("  owner/trusted: indexable=[*], access=[trust:trusted]");
+          logger.info("  semi-trusted/untrusted: indexable=[self]");
+        } else {
+          logger.info(`Session: ${sessionName}`);
+          if (sess.access) logger.info(`  access: ${sess.access.join(", ")}`);
+          if (sess.capabilities) logger.info(`  capabilities: ${sess.capabilities.join(", ")}`);
+          if (sess.indexable) logger.info(`  indexable: ${sess.indexable.join(", ")}`);
+          if (sess.sandbox) logger.info(`  sandbox: ${JSON.stringify(sess.sandbox)}`);
+          if (sess.prompt) logger.info(`  prompt: ${sess.prompt.slice(0, 50)}...`);
+          if (sess.description) logger.info(`  description: ${sess.description}`);
+        }
+      } else if (property === "indexable" || property === "access" || property === "capabilities") {
+        if (!value) {
+          logger.error(`Usage: wopr security session <name> ${property} <patterns>`);
+          logger.error(`  ${property}: comma-separated list`);
+          process.exit(1);
+        }
+
+        // Parse patterns (comma-separated)
+        const patterns = value.split(",").map(p => p.trim()).filter(Boolean);
+
+        // Update security config
+        const config = getSecurityConfig();
+        if (!config.sessions) config.sessions = {};
+        if (!config.sessions[sessionName]) config.sessions[sessionName] = {};
+        (config.sessions[sessionName] as any)[property] = patterns;
+        saveSecurityConfig(config);
+
+        logger.info(`Set ${property} for "${sessionName}" to: ${patterns.join(", ")}`);
+      } else if (property === "delete" || property === "remove") {
+        // Remove session config
+        const config = getSecurityConfig();
+        if (config.sessions?.[sessionName]) {
+          delete config.sessions[sessionName];
+          saveSecurityConfig(config);
+          logger.info(`Removed security config for session "${sessionName}"`);
+        } else {
+          logger.info(`Session "${sessionName}" has no explicit config to remove.`);
+        }
+      } else {
+        logger.error(`Unknown property: ${property}`);
+        logger.error("Supported properties: indexable, access, capabilities, delete");
+        process.exit(1);
+      }
+    } else if (subcommand === "p2p") {
+      const config = getSecurityConfig();
+      const setting = args[0];
+      const value = args[1];
+
+      if (!setting) {
+        // Show P2P security settings
+        logger.info("P2P Security Settings:");
+        logger.info(`  discovery-trust: ${config.p2p?.discoveryTrust ?? "untrusted"}`);
+        logger.info(`  auto-accept: ${config.p2p?.autoAccept ?? false}`);
+        logger.info(`  key-rotation-grace-hours: ${config.p2p?.keyRotationGraceHours ?? 24}`);
+        logger.info(`  max-payload-size: ${config.p2p?.maxPayloadSize ?? 1048576} bytes`);
+      } else if (setting === "discovery-trust") {
+        if (!value) {
+          logger.info(`Current discovery trust: ${config.p2p?.discoveryTrust ?? "untrusted"}`);
+        } else if (["owner", "trusted", "semi-trusted", "untrusted"].includes(value)) {
+          if (!config.p2p) config.p2p = { discoveryTrust: "untrusted", autoAccept: false };
+          config.p2p.discoveryTrust = value as any;
+          saveSecurityConfig(config);
+          logger.info(`Set P2P discovery trust to: ${value}`);
+        } else {
+          logger.error("Invalid trust level. Use: owner, trusted, semi-trusted, untrusted");
+          process.exit(1);
+        }
+      } else if (setting === "auto-accept") {
+        if (!value) {
+          logger.info(`Current auto-accept: ${config.p2p?.autoAccept ?? false}`);
+        } else {
+          const enabled = value === "true" || value === "yes" || value === "1";
+          if (!config.p2p) config.p2p = { discoveryTrust: "untrusted", autoAccept: false };
+          config.p2p.autoAccept = enabled;
+          saveSecurityConfig(config);
+          logger.info(`Set P2P auto-accept to: ${enabled}`);
+        }
+      } else {
+        logger.error("Unknown P2P setting. Use: discovery-trust, auto-accept");
+        process.exit(1);
+      }
+    } else if (subcommand === "audit") {
+      const config = getSecurityConfig();
+      const action = args[0];
+
+      if (!action) {
+        // Show audit settings
+        logger.info("Audit Settings:");
+        logger.info(`  enabled: ${config.audit?.enabled ?? false}`);
+        logger.info(`  log-success: ${config.audit?.logSuccess ?? false}`);
+        logger.info(`  log-denied: ${config.audit?.logDenied ?? true}`);
+        logger.info(`  log-path: ${config.audit?.logPath ?? "(default)"}`);
+      } else if (action === "enable") {
+        if (!config.audit) config.audit = { enabled: false };
+        config.audit.enabled = true;
+        saveSecurityConfig(config);
+        logger.info("Audit logging enabled.");
+      } else if (action === "disable") {
+        if (!config.audit) config.audit = { enabled: false };
+        config.audit.enabled = false;
+        saveSecurityConfig(config);
+        logger.info("Audit logging disabled.");
+      } else if (action === "log-success") {
+        const value = args[1];
+        if (!config.audit) config.audit = { enabled: false };
+        config.audit.logSuccess = value === "true" || value === "yes" || value === "1";
+        saveSecurityConfig(config);
+        logger.info(`Audit log-success set to: ${config.audit.logSuccess}`);
+      } else if (action === "log-denied") {
+        const value = args[1];
+        if (!config.audit) config.audit = { enabled: false };
+        config.audit.logDenied = value === "true" || value === "yes" || value === "1";
+        saveSecurityConfig(config);
+        logger.info(`Audit log-denied set to: ${config.audit.logDenied}`);
+      } else {
+        logger.error("Unknown audit action. Use: enable, disable, log-success, log-denied");
+        process.exit(1);
+      }
+    } else if (subcommand === "sources") {
+      // List source-specific configs (these come from P2P plugin syncing)
+      const config = getSecurityConfig();
+      const sources = (config as any).sources || {};
+      const sourceNames = Object.keys(sources);
+
+      if (sourceNames.length === 0) {
+        logger.info("No source-specific security configs defined.");
+        logger.info("Sources use defaults based on type (cli, p2p, plugin, etc.).");
+      } else {
+        logger.info("Source security configs:");
+        logger.info("Source                                      | Type  | Trust       | Sessions");
+        logger.info("--------------------------------------------|-------|-------------|------------------");
+        for (const name of sourceNames) {
+          const src = sources[name];
+          const type = src.type || "?";
+          const trust = src.trust || "?";
+          const sessions = src.sessions?.join(",") || "(any)";
+          logger.info(`${name.slice(0, 43).padEnd(43)} | ${type.padEnd(5)} | ${trust.padEnd(11)} | ${sessions}`);
+        }
+      }
+    } else if (subcommand === "defaults") {
+      // Show default security policy
+      const config = getSecurityConfig();
+      logger.info("Default Security Policy:");
+      logger.info(`  Min trust level: ${config.defaults.minTrustLevel ?? "semi-trusted"}`);
+      logger.info(`  Rate limit: ${config.defaults.rateLimit?.perMinute ?? 60}/min, ${config.defaults.rateLimit?.perHour ?? 1000}/hr`);
+      logger.info("");
+      logger.info("Trust Level Defaults:");
+      for (const level of ["owner", "trusted", "semi-trusted", "untrusted"] as const) {
+        const policy = config.trustLevels?.[level];
+        const caps = policy?.capabilities || CAPABILITY_PROFILES[level] || [];
+        const sandbox = policy?.sandbox || DEFAULT_SANDBOX_BY_TRUST[level];
+        const capStr = caps.includes("*") ? "*" : caps.slice(0, 3).join(",") + (caps.length > 3 ? "..." : "");
+        logger.info(`  ${level.padEnd(13)}: caps=[${capStr}], sandbox=${sandbox?.enabled ? "yes" : "no"}`);
+      }
+    } else {
+      logger.error("Usage:");
+      logger.error("  wopr security status                        Show security status");
+      logger.error("  wopr security enforcement <mode>            Set enforcement mode");
+      logger.error("  wopr security sessions                      List session configs");
+      logger.error("  wopr security session <name>                Show session config");
+      logger.error("  wopr security session <name> <prop> <val>   Set session property");
+      logger.error("  wopr security p2p                           Show P2P security");
+      logger.error("  wopr security p2p <setting> <value>         Set P2P setting");
+      logger.error("  wopr security audit                         Show audit settings");
+      logger.error("  wopr security audit <action>                Enable/disable audit");
+      logger.error("  wopr security sources                       List source configs");
+      logger.error("  wopr security defaults                      Show default policy");
+      process.exit(1);
+    }
+  } else if (command === "sandbox") {
+    // Sandbox management commands
+    const {
+      isDockerAvailable,
+      listSandboxes,
+      getSandboxForSession,
+      destroySandbox,
+      cleanupAllSandboxes,
+      execInSandbox,
+    } = await import("./security/index.js");
+    const {
+      resolveSandboxConfig,
+      shouldSandbox,
+      listRegistryEntries,
+      removeSandboxContainer,
+      removeRegistryEntry,
+      ensureSandboxContainer,
+    } = await import("./sandbox/index.js");
+
+    if (subcommand === "status") {
+      // Show sandbox status
+      const dockerAvailable = await isDockerAvailable();
+      logger.info("Sandbox Status");
+      logger.info("==============");
+      logger.info(`Docker available: ${dockerAvailable ? "yes" : "no"}`);
+
+      const entries = listRegistryEntries();
+      logger.info(`Active containers: ${entries.length}`);
+
+      if (entries.length > 0) {
+        logger.info("");
+        logger.info("Container              | Session          | Created              | Last Used");
+        logger.info("-----------------------|------------------|----------------------|--------------------");
+        for (const e of entries) {
+          const created = new Date(e.createdAtMs).toISOString().slice(0, 19);
+          const lastUsed = new Date(e.lastUsedAtMs).toISOString().slice(0, 19);
+          logger.info(
+            `${e.containerName.slice(0, 22).padEnd(22)} | ` +
+            `${e.sessionKey.slice(0, 16).padEnd(16)} | ` +
+            `${created} | ${lastUsed}`
+          );
+        }
+      }
+    } else if (subcommand === "list") {
+      // List all containers
+      const entries = listRegistryEntries();
+      if (entries.length === 0) {
+        logger.info("No sandbox containers.");
+      } else {
+        for (const e of entries) {
+          logger.info(`${e.containerName} (${e.sessionKey}) - image: ${e.image}`);
+        }
+      }
+    } else if (subcommand === "create") {
+      const sessionName = args[0];
+      if (!sessionName) {
+        logger.error("Usage: wopr sandbox create <session>");
+        process.exit(1);
+      }
+
+      const dockerAvailable = await isDockerAvailable();
+      if (!dockerAvailable) {
+        logger.error("Docker is not available. Please install and start Docker.");
+        process.exit(1);
+      }
+
+      const cfg = resolveSandboxConfig({ sessionName });
+      if (cfg.mode === "off") {
+        logger.warn("Sandbox mode is 'off'. Set sandbox.mode in config to 'all' or 'non-main'.");
+      }
+
+      logger.info(`Creating sandbox for session: ${sessionName}`);
+      const sandbox = await getSandboxForSession(sessionName);
+      if (sandbox) {
+        logger.info(`Sandbox created: ${sandbox.containerName}`);
+        logger.info(`  Workspace: ${sandbox.workspaceDir}`);
+        logger.info(`  Container workdir: ${sandbox.containerWorkdir}`);
+      } else {
+        logger.info("Session is not configured for sandboxing.");
+      }
+    } else if (subcommand === "destroy") {
+      const sessionName = args[0];
+      if (!sessionName) {
+        logger.error("Usage: wopr sandbox destroy <session>");
+        process.exit(1);
+      }
+
+      await destroySandbox(sessionName);
+      logger.info(`Sandbox destroyed for session: ${sessionName}`);
+    } else if (subcommand === "exec") {
+      const sessionName = args[0];
+      const command = args.slice(1).join(" ");
+      if (!sessionName || !command) {
+        logger.error("Usage: wopr sandbox exec <session> <command>");
+        process.exit(1);
+      }
+
+      const result = await execInSandbox(sessionName, command);
+      if (!result) {
+        logger.error(`Session ${sessionName} is not sandboxed.`);
+        process.exit(1);
+      }
+
+      if (result.stdout) {
+        process.stdout.write(result.stdout);
+      }
+      if (result.stderr) {
+        process.stderr.write(result.stderr);
+      }
+      process.exit(result.exitCode);
+    } else if (subcommand === "prune") {
+      logger.info("Removing all sandbox containers...");
+      await cleanupAllSandboxes();
+      logger.info("Done.");
+    } else if (subcommand === "recreate") {
+      const sessionName = args[0];
+      if (!sessionName) {
+        logger.error("Usage: wopr sandbox recreate <session>");
+        process.exit(1);
+      }
+
+      // Destroy and recreate
+      await destroySandbox(sessionName);
+      const sandbox = await getSandboxForSession(sessionName);
+      if (sandbox) {
+        logger.info(`Sandbox recreated: ${sandbox.containerName}`);
+      } else {
+        logger.info("Session is not configured for sandboxing.");
+      }
+    } else {
+      logger.error("Usage:");
+      logger.error("  wopr sandbox status                   Show sandbox status");
+      logger.error("  wopr sandbox list                     List containers");
+      logger.error("  wopr sandbox create <session>         Create sandbox");
+      logger.error("  wopr sandbox destroy <session>        Destroy sandbox");
+      logger.error("  wopr sandbox exec <session> <cmd>     Execute in sandbox");
+      logger.error("  wopr sandbox prune                    Remove all containers");
+      logger.error("  wopr sandbox recreate <session>       Recreate container");
+      process.exit(1);
     }
   } else if (command === "onboard") {
     // New interactive onboarding wizard

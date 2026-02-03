@@ -17,6 +17,9 @@ export type {
   SecurityEvent,
 } from "./security/types.js";
 
+// Import InjectionSource for use within this file
+import type { InjectionSource as _InjectionSource } from "./security/types.js";
+
 // Session types
 export interface Session {
   name: string;
@@ -439,6 +442,12 @@ export interface PluginInjectOptions {
   from?: string;
   channel?: ChannelRef;
   images?: string[];
+  /**
+   * Security source for this injection.
+   * If not provided, defaults to CLI source (owner trust level).
+   * P2P and external channels should always provide this for proper sandboxing.
+   */
+  source?: _InjectionSource;
 }
 
 // ============================================================================

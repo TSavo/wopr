@@ -2,72 +2,61 @@
 
 **Without Official Permission Required**
 
-Self-sovereign AI session management over P2P.
+Self-sovereign AI session management with plugin-based extensibility.
 
-WOPR lets AI agents communicate directly with each other, without servers, without accounts, without permission. Each agent has a cryptographic identity. Trust is established through signed invites bound to specific public keys. Messages are end-to-end encrypted.
+WOPR provides a foundation for managing AI sessions with persistent context, scheduling, and a comprehensive plugin system. Through plugins, agents can communicate directly with each other over P2P, integrate with messaging platforms, and use multiple AI providers.
 
 [![GitHub](https://img.shields.io/github/stars/TSavo/wopr?style=social)](https://github.com/TSavo/wopr)
 
 ## Features
 
-- 🔐 **Cryptographic Identity** - Ed25519/X25519 keypairs, no accounts needed
-- 💬 **AI Sessions** - Persistent conversations with context
-- 🌐 **P2P Messaging** - Direct agent-to-agent communication across instances
-- 🤖 **A2A (Agent-to-Agent)** - Multi-agent coordination within one instance
-- 🔌 **Plugin System** - Discord, Slack, Telegram, WhatsApp, Signal, iMessage, Teams
-- 📅 **Scheduled Injections** - Cron-style scheduling
-- 🧩 **Skills System** - Reusable AI capabilities
-- 🎯 **Event Bus** - Reactive plugin composition
-- 🏢 **Workspace Identity** - AGENTS.md, SOUL.md, USER.md support
-- 🛡️ **Session Security** - Trust levels, capability-based access, Docker sandbox isolation
-- 🚪 **Gateway Sessions** - Controlled escalation from untrusted to privileged sessions
+- **AI Sessions** - Persistent conversations with context and history
+- **Multi-Provider Support** - Anthropic Claude, OpenAI Codex (built-in), plus more via plugins
+- **Plugin System** - Extensible architecture for channels, providers, and custom functionality
+- **A2A (Agent-to-Agent)** - Multi-agent coordination within one instance
+- **Scheduled Injections** - Cron-style scheduling for automated interactions
+- **Skills System** - Reusable AI capabilities
+- **Event Bus** - Reactive plugin composition
+- **Workspace Identity** - AGENTS.md, SOUL.md, USER.md support
+- **Session Security** - Trust levels, capability-based access, Docker sandbox isolation
+- **Gateway Sessions** - Controlled escalation from untrusted to privileged sessions
+
+### With Plugins
+
+- **P2P Messaging** - Direct agent-to-agent communication (wopr-plugin-p2p)
+- **Cryptographic Identity** - Ed25519/X25519 keypairs (wopr-plugin-p2p)
+- **Channel Integrations** - Discord, Slack, Telegram, WhatsApp, Signal, iMessage, Teams
 
 ## Quick Start
 
 ```bash
 # Install
-npm install -g wopr
+npm install -g @tsavo/wopr
 
-# Interactive setup wizard
+# Interactive setup wizard (recommended)
 wopr onboard
 
 # Or manual setup:
 
-# Create your identity
-wopr id init
+# Start the daemon
+wopr daemon start
 
 # Create a session
 wopr session create mybot "You are a helpful assistant."
 
-# Start the daemon (listens for P2P messages)
-wopr daemon start
-
-# Share your pubkey with someone, get theirs
-wopr id
-# WOPR ID: MCoxK8f2
-# Full: wopr://MCoxK8f2...
-
-# Create an invite for them (bound to THEIR pubkey)
-wopr invite <their-pubkey> mybot
-# wop1://eyJ2IjoxLC...
-
-# They claim your invite (establishes mutual trust)
-wopr invite claim <token>
-# Success! Now Bob can inject to alice:mySession
-
-# Now they can inject messages to your session
-wopr inject MCoxK8f2:mybot "Hello!"
+# Inject a message
+wopr session inject mybot "Hello, how are you?"
 ```
 
 ## Documentation
 
 ### Getting Started
 - [Quick Start](#quick-start) - Get up and running in minutes
-- [Onboarding Wizard](#plugins) - Interactive setup with `wopr onboard`
+- [Onboarding Wizard](#onboarding) - Interactive setup with `wopr onboard`
 - [Examples](examples/) - Example plugins and patterns
 
 ### Core Documentation
-- [Architecture](docs/ARCHITECTURE.md) - System design and protocols
+- [Architecture](docs/ARCHITECTURE.md) - System design and components
 - [API Reference](docs/API.md) - HTTP API documentation
 - [Configuration](docs/CONFIGURATION.md) - Complete config reference
 - [Events](docs/events.md) - Event bus and reactive programming
@@ -87,48 +76,16 @@ wopr inject MCoxK8f2:mybot "Hello!"
 - [Security API](docs/SECURITY_API.md) - Programmatic security management
 - [Gateway Sessions](docs/GATEWAY.md) - Gateway routing for untrusted sources
 - [Docker Sandbox](docs/SANDBOX.md) - Isolated execution environments
-- [Threat Model](docs/THREAT_MODEL.md) - Cryptographic security analysis
 
-### Protocol
+### P2P (with wopr-plugin-p2p)
 - [Discovery](docs/DISCOVERY.md) - P2P discovery protocol
 - [Protocol Spec](docs/PROTOCOL.md) - Communication protocol details
+- [Threat Model](docs/THREAT_MODEL.md) - Cryptographic security analysis
 
 ### Project
 - [Changelog](CHANGELOG.md) - Version history and changes
 
 ## Core Concepts
-
-### Identity
-
-Every WOPR instance has a cryptographic identity:
-- **Ed25519 keypair** - for signing messages
-- **X25519 keypair** - for encryption
-- **Short ID** - first 8 chars of SHA256(pubkey)
-
-```bash
-wopr id init          # Generate identity
-wopr id               # Show your ID
-wopr id rotate        # Rotate keys (notifies peers with --broadcast)
-```
-
-Your identity is stored in `~/.wopr/identity.json` (mode 0600).
-
-### Workspace Identity
-
-WOPR supports rich agent identity through workspace files:
-
-```bash
-# Agent persona (AGENTS.md)
-echo "You are a helpful coding assistant..." > AGENTS.md
-
-# Agent essence (SOUL.md)  
-echo "Core values: helpfulness, accuracy..." > SOUL.md
-
-# User profile (USER.md)
-echo "User prefers TypeScript and clean code..." > USER.md
-```
-
-These files provide context to AI sessions automatically.
 
 ### Sessions
 
@@ -151,16 +108,58 @@ wopr session delete dev
 - `show` - Show session details and conversation history
 - `delete` - Delete a session
 - `set-provider` - Change the AI provider for a session
+- `init-docs` - Initialize SOUL.md, AGENTS.md, USER.md for a session
 
-Sessions can be injected into locally or by authorized peers over P2P.
+**Auto-detected providers:** WOPR automatically uses the first available provider - no configuration needed if you have one provider set up!
 
-**Auto-detected providers:** WOPR automatically uses the first available provider (Kimi, Anthropic, OpenAI, etc.) - no configuration needed if you have one provider set up!
+### Workspace Identity
+
+WOPR supports rich agent identity through workspace files:
+
+```bash
+# Agent persona (AGENTS.md)
+echo "You are a helpful coding assistant..." > AGENTS.md
+
+# Agent essence (SOUL.md)
+echo "Core values: helpfulness, accuracy..." > SOUL.md
+
+# User profile (USER.md)
+echo "User prefers TypeScript and clean code..." > USER.md
+```
+
+These files provide context to AI sessions automatically.
+
+### Providers
+
+WOPR supports multiple AI providers:
+
+```bash
+# List available providers
+wopr providers list
+
+# Add a provider credential
+wopr providers add anthropic <api-key>
+wopr providers add codex <api-key>
+
+# Check provider health
+wopr providers health-check
+
+# Set default model for a provider
+wopr providers default anthropic --model claude-sonnet-4-20250514
+wopr providers default codex --reasoning-effort high
+```
+
+**Built-in Providers:**
+- `anthropic` - Claude models via Agent SDK
+- `codex` - OpenAI Codex agent for coding tasks
+
+**Additional providers** are available via plugins (see Plugins section).
 
 ### Channels
 
-Channels are external message sources/sinks (Discord, P2P peers, etc.) that provide context and map into a session. Sessions remain the agent-native unit of memory, while channels describe *how* messages arrive and where responses go.
+Channels are external message sources/sinks (Discord, Slack, P2P peers, etc.) that provide context and map into a session. Sessions remain the agent-native unit of memory, while channels describe *how* messages arrive and where responses go.
 
-**Supported Channels:**
+**Supported Channels (via plugins):**
 - Discord (`wopr-plugin-discord`)
 - Slack (`wopr-plugin-slack`)
 - Telegram (`wopr-plugin-telegram`)
@@ -168,98 +167,19 @@ Channels are external message sources/sinks (Discord, P2P peers, etc.) that prov
 - Signal (`wopr-plugin-signal`)
 - iMessage (`wopr-plugin-imessage` - macOS only)
 - Microsoft Teams (`wopr-plugin-msteams`)
-- P2P (built-in)
+- P2P (`wopr-plugin-p2p`)
 
 See [Plugins documentation](docs/PLUGINS.md) for setup instructions.
 
-### Middleware
-
-Middlewares transform messages flowing through channels:
-
-```bash
-# Install middleware plugins
-wopr plugin install github:username/wopr-plugin-filter
-
-# Middlewares are registered at runtime through the plugin context
-# and can modify or block incoming/outgoing messages
-```
-
-### Invites & Trust
-
-Trust is explicit and cryptographically bound:
-
-```bash
-# Alice creates invite for Bob (requires Bob's pubkey)
-alice$ wopr invite <bob-pubkey> mySession
-# Output: wop1://eyJ2IjoxLC...
-
-# Bob claims it (proves he owns the pubkey)
-bob$ wopr invite claim <token>
-# Success! Now Bob can inject to alice:mySession
-
-# Alice can see who has access
-alice$ wopr access
-
-# Alice can revoke
-alice$ wopr revoke bob
-```
-
-**Key insight:** Invites are bound to the recipient's public key. If someone intercepts the token, they can't use it - only the intended recipient can claim it.
-
-### P2P Messaging
-
-Once trust is established, inject messages directly:
-
-```bash
-# Send to a peer's session
-wopr inject alice:dev "Can you review my code?"
-
-# Messages are:
-# - End-to-end encrypted (X25519 ECDH + AES-256-GCM)
-# - Forward secret (ephemeral keys per session)
-# - Signed (Ed25519)
-# - Replay protected (nonces + timestamps)
-```
-
-### Discovery
-
-Find peers in topic-based rooms:
-
-```bash
-# Join a topic
-wopr discover join "ai-agents"
-# Listening for peers... (Ctrl+C to exit)
-
-# In another terminal, see who's there
-wopr discover peers
-
-# Set your profile (AI decides what to advertise)
-wopr discover profile set '{"name":"Alice","skills":["coding","review"]}'
-
-# Request connection with discovered peer
-wopr discover connect <peer-id>
-```
-
-Discovery is **ephemeral** - you only see peers while both are online in the same topic.
-
-**Spam resistance:** Even in a flooded topic:
-1. Profiles are signed - filter by pubkey
-2. Invites are bound - intercepted tokens are useless
-3. AI decides - reject garbage connection requests
-4. Secret topics - agree on obscure names out-of-band
-
 ### Daemon
 
-Run the daemon to receive P2P messages:
+The daemon runs WOPR's background services:
 
 ```bash
 wopr daemon start     # Start in background
 wopr daemon status    # Check if running
 wopr daemon logs      # View logs
 wopr daemon stop      # Stop
-
-# With discovery (join topics on startup)
-WOPR_TOPICS="ai-agents,my-team" wopr daemon start
 ```
 
 ### Scheduled Injections
@@ -299,18 +219,71 @@ wopr skill list
 
 Skills are automatically available to all sessions.
 
+### Middleware
+
+Middleware transforms messages flowing through channels:
+
+```bash
+# List installed middleware
+wopr middleware list
+
+# Show middleware execution order
+wopr middleware chain
+
+# Enable/disable middleware
+wopr middleware enable <name>
+wopr middleware disable <name>
+
+# Set execution priority (lower = runs first)
+wopr middleware priority <name> 50
+```
+
+### Context Providers
+
+Context providers assemble context for AI sessions:
+
+```bash
+# List context providers
+wopr context list
+
+# Enable/disable providers
+wopr context enable <name>
+wopr context disable <name>
+
+# Set priority (lower = appears earlier in context)
+wopr context priority <name> 10
+```
+
+## Onboarding
+
+The interactive onboarding wizard guides you through setup:
+
+```bash
+wopr onboard
+```
+
+This will help you:
+1. Configure providers and authentication
+2. Set up channel plugins (Discord, Slack, etc.)
+3. Configure P2P networking (optional, requires plugin)
+4. Initialize workspace files
+
+You can re-run configuration at any time:
+
+```bash
+wopr configure
+```
+
 ## Plugins
 
 WOPR's plugin system extends functionality:
 
 ```bash
-# Interactive plugin setup
-wopr onboard
-
-# Or manual installation:
-
 # Install a plugin from GitHub
 wopr plugin install github:TSavo/wopr-plugin-discord
+
+# Install from npm
+wopr plugin install wopr-plugin-discord
 
 # Enable/disable plugins
 wopr plugin enable wopr-plugin-discord
@@ -318,6 +291,9 @@ wopr plugin disable wopr-plugin-discord
 
 # List installed plugins
 wopr plugin list
+
+# Search for plugins
+wopr plugin search discord
 ```
 
 **Official Channel Plugins:**
@@ -331,10 +307,47 @@ wopr plugin list
 
 **Official Provider Plugins:**
 - [wopr-plugin-provider-kimi](https://github.com/TSavo/wopr-plugin-provider-kimi) - Moonshot AI Kimi
-- [wopr-plugin-provider-openai](https://github.com/TSavo/wopr-plugin-provider-openai) - OpenAI
+- [wopr-plugin-provider-openai](https://github.com/TSavo/wopr-plugin-provider-openai) - OpenAI GPT models
 - [wopr-plugin-provider-anthropic](https://github.com/TSavo/wopr-plugin-provider-anthropic) - Anthropic Claude
 
+**P2P Plugin:**
+- [wopr-plugin-p2p](https://github.com/TSavo/wopr-plugin-p2p) - P2P networking, identity, invites, discovery
+
 See [Plugins documentation](docs/PLUGINS.md) for development guide.
+
+## P2P Networking (Plugin)
+
+P2P functionality requires the P2P plugin:
+
+```bash
+wopr plugin install wopr-plugin-p2p
+wopr plugin enable wopr-plugin-p2p
+```
+
+The P2P plugin provides:
+- **Cryptographic Identity** - Ed25519/X25519 keypairs (`wopr id init`)
+- **End-to-end Encryption** - X25519 ECDH + AES-256-GCM
+- **Forward Secrecy** - Ephemeral keys per session
+- **Signed Invites** - Trust bound to recipient public keys (`wopr invite`)
+- **DHT Discovery** - Hyperswarm-based peer discovery (`wopr discover`)
+
+**P2P Plugin Commands:**
+```bash
+wopr id init              # Generate identity
+wopr id                   # Show your ID
+wopr id rotate            # Rotate keys
+
+wopr invite <pubkey> <session>  # Create invite
+wopr invite claim <token>       # Claim invite
+wopr access                     # List who has access
+wopr revoke <peer>              # Revoke access
+
+wopr discover join <topic>      # Join discovery topic
+wopr discover peers             # List discovered peers
+wopr discover connect <peer>    # Connect to peer
+```
+
+See the [P2P plugin documentation](https://github.com/TSavo/wopr-plugin-p2p) for full details.
 
 ## Examples
 
@@ -342,7 +355,7 @@ Example plugins demonstrating WOPR capabilities:
 
 ```bash
 # Copy example plugins
-cp -r examples/plugins/* ~/.wopr/plugins/
+cp -r examples/plugins/* ~/wopr/plugins/
 
 # Enable and try them
 wopr plugin enable event-monitor
@@ -373,7 +386,7 @@ async init(ctx) {
   });
 
   // Hooks for mutation
-  ctx.hooks.on("session:beforeInject", async (event) => {
+  ctx.hooks.on("message:incoming", async (event) => {
     // Can modify message before it reaches AI
     event.data.message = `[${new Date().toISOString()}] ${event.data.message}`;
   });
@@ -388,118 +401,181 @@ See [Events documentation](docs/events.md) for full API.
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                        WOPR                             │
-├─────────────────────────────────────────────────────────┤
-│  CLI (wopr)                                             │
-│    ├── session management                               │
-│    ├── identity & trust                                 │
-│    ├── P2P commands                                     │
-│    ├── discovery                                        │
-│    └── plugin commands                                  │
-├─────────────────────────────────────────────────────────┤
-│  Daemon                                                 │
-│    ├── P2P listener (Hyperswarm)                       │
-│    ├── Discovery (topic announcements)                  │
-│    ├── Cron scheduler                                   │
-│    ├── Session injection                                │
-│    └── Plugin runtime                                   │
-├─────────────────────────────────────────────────────────┤
-│  Plugin System                                          │
-│    ├── Channel adapters (Discord, Slack, etc.)         │
-│    ├── Model providers (Kimi, OpenAI, Anthropic)       │
-│    ├── Middleware (message transformation)             │
-│    └── Event bus (reactive composition)                │
-├─────────────────────────────────────────────────────────┤
-│  Security Layer                                         │
-│    ├── Ed25519 signatures                               │
-│    ├── X25519 ECDH key exchange                        │
-│    ├── AES-256-GCM encryption                          │
-│    ├── Forward secrecy (ephemeral keys)                │
-│    ├── Key rotation                                     │
-│    ├── Rate limiting                                    │
-│    └── Replay protection                                │
-├─────────────────────────────────────────────────────────┤
-│  P2P Layer (Hyperswarm)                                │
-│    ├── DHT-based peer discovery                        │
-│    ├── NAT traversal                                    │
-│    └── Encrypted connections                            │
-└─────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|                         WOPR                                |
++-------------------------------------------------------------+
+|  CLI (wopr)                                                 |
+|    +-- session management                                   |
+|    +-- skill management                                     |
+|    +-- cron scheduling                                      |
+|    +-- provider management                                  |
+|    +-- plugin commands                                      |
+|    +-- security/sandbox management                          |
++-------------------------------------------------------------+
+|  Daemon                                                     |
+|    +-- HTTP API server                                      |
+|    +-- Cron scheduler                                       |
+|    +-- Session injection                                    |
+|    +-- Plugin runtime                                       |
++-------------------------------------------------------------+
+|  Plugin System                                              |
+|    +-- Channel adapters (Discord, Slack, etc.)             |
+|    +-- Model providers (Kimi, OpenAI, Anthropic)           |
+|    +-- P2P networking (via plugin)                          |
+|    +-- Middleware (message transformation)                 |
+|    +-- Event bus (reactive composition)                    |
++-------------------------------------------------------------+
+|  Security Layer                                             |
+|    +-- Trust levels (owner, trusted, semi-trusted, etc.)   |
+|    +-- Capability-based access control                      |
+|    +-- Rate limiting                                        |
+|    +-- Docker sandbox isolation                             |
++-------------------------------------------------------------+
+|  Context System                                             |
+|    +-- Provider-based context assembly                      |
+|    +-- Skills injection                                     |
+|    +-- Workspace files (AGENTS.md, SOUL.md, USER.md)       |
++-------------------------------------------------------------+
 ```
 
 See [Architecture documentation](docs/ARCHITECTURE.md) for details.
 
 ## Security
 
-See [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) for full details.
+WOPR implements a three-layer security model:
 
-**Key properties:**
-- No servers, no accounts, no central authority
-- End-to-end encryption for all P2P messages
-- Forward secrecy - past sessions safe even if keys compromised
-- Invites bound to recipient pubkey - non-transferable
-- Signatures on everything - tampering detected
-- Rate limiting and replay protection
+1. **Trust Levels** - owner, trusted, semi-trusted, untrusted
+2. **Capabilities** - Fine-grained permission control
+3. **Sandbox Isolation** - Docker-based execution isolation
+
+```bash
+# View security status
+wopr security status
+
+# Set enforcement mode
+wopr security enforcement enforce  # off, warn, enforce
+
+# Configure session security
+wopr security session main capabilities "*"
+wopr security session gateway access "trust:untrusted"
+
+# Manage sandboxes
+wopr sandbox status
+wopr sandbox create mysession
+```
+
+See [docs/SECURITY.md](docs/SECURITY.md) for full details.
 
 ## Environment Variables
 
 ```bash
-WOPR_HOME           # Base directory (default: ~/.wopr)
-WOPR_TOPICS         # Comma-separated topics for daemon discovery
-ANTHROPIC_API_KEY   # Required for Claude sessions
-KIMI_API_KEY        # Required for Kimi sessions
-OPENAI_API_KEY      # Required for OpenAI sessions
+WOPR_HOME           # Base directory (default: ~/wopr)
+ANTHROPIC_API_KEY   # API key for Claude (Anthropic)
+OPENAI_API_KEY      # API key for Codex (OpenAI)
 GITHUB_TOKEN        # Optional, for skill registry search
 ```
 
 ## File Structure
 
 ```
-~/.wopr/
-├── identity.json     # Your keypairs (mode 0600)
-├── access.json       # Who can inject to your sessions
-├── peers.json        # Peers you can inject to
-├── sessions.json     # Session ID mappings
-├── sessions/         # Session context files
-│   └── mybot.md
-├── skills/           # Installed skills
-│   └── code-review/
-│       └── SKILL.md
-├── plugins/          # Installed plugins
-│   └── wopr-plugin-discord/
-├── crons.json        # Scheduled jobs
-├── registries.json   # Skill registries
-├── daemon.pid        # Daemon process ID
-└── daemon.log        # Daemon logs
+~/wopr/
++-- config.json       # Main configuration
++-- sessions.json     # Session ID mappings
++-- sessions/         # Session context files
+|   +-- mybot.md
++-- skills/           # Installed skills
+|   +-- code-review/
+|       +-- SKILL.md
++-- plugins/          # Installed plugins
+|   +-- wopr-plugin-discord/
++-- plugins.json      # Plugin registry
++-- crons.json        # Scheduled jobs
++-- registries.json   # Skill registries
++-- security.json     # Security configuration
++-- daemon.pid        # Daemon process ID
++-- daemon.log        # Daemon logs
 ```
 
-## Project Structure
+## CLI Reference
 
+```bash
+wopr onboard                           # Interactive onboarding wizard
+wopr configure                         # Re-run configuration wizard
+
+# Sessions
+wopr session create <name> [context]   # Create session
+wopr session inject <name> <message>   # Inject message
+wopr session log <name> <message>      # Log without AI response
+wopr session list                      # List sessions
+wopr session show <name>               # Show session details
+wopr session delete <name>             # Delete session
+wopr session set-provider <name> <id>  # Update provider
+wopr session init-docs <name>          # Initialize workspace files
+
+# Providers
+wopr providers list                    # List providers
+wopr providers add <id> [credential]   # Add credential
+wopr providers remove <id>             # Remove credential
+wopr providers health-check            # Check health
+wopr providers default <id> [options]  # Set defaults
+
+# Plugins
+wopr plugin list                       # List plugins
+wopr plugin install <source>           # Install plugin
+wopr plugin remove <name>              # Remove plugin
+wopr plugin enable <name>              # Enable plugin
+wopr plugin disable <name>             # Disable plugin
+wopr plugin search <query>             # Search for plugins
+
+# Skills
+wopr skill list                        # List skills
+wopr skill install <source>            # Install skill
+wopr skill remove <name>               # Remove skill
+wopr skill search <query>              # Search skills
+wopr skill create <name>               # Create new skill
+
+# Scheduling
+wopr cron add <name> <sched> <sess> <msg>  # Add cron job
+wopr cron once <time> <session> <message>  # One-time job
+wopr cron now <session> <message>          # Run immediately
+wopr cron list                             # List crons
+wopr cron remove <name>                    # Remove cron
+
+# Configuration
+wopr config get [key]                  # Show config
+wopr config set <key> <value>          # Set value
+wopr config reset                      # Reset to defaults
+
+# Daemon
+wopr daemon start                      # Start daemon
+wopr daemon stop                       # Stop daemon
+wopr daemon status                     # Check status
+wopr daemon logs                       # View logs
+
+# Security
+wopr security status                   # Show status
+wopr security enforcement <mode>       # Set mode
+wopr security session <name>           # Configure session
+wopr sandbox status                    # Show sandboxes
+wopr sandbox create <session>          # Create sandbox
+
+# Middleware
+wopr middleware list                   # List middleware
+wopr middleware chain                  # Show execution order
+wopr middleware enable <name>          # Enable middleware
+wopr middleware disable <name>         # Disable middleware
+
+# Context
+wopr context list                      # List context providers
+wopr context enable <name>             # Enable provider
+wopr context disable <name>            # Disable provider
+
+# Authentication
+wopr auth                              # Show auth status
+wopr auth login                        # OAuth login
+wopr auth api-key <key>                # Use API key
+wopr auth logout                       # Clear credentials
 ```
-wopr/
-├── src/
-│   ├── commands/     # CLI commands
-│   ├── core/         # Core functionality
-│   │   ├── events.ts      # Event bus
-│   │   ├── sessions.ts    # Session management
-│   │   ├── providers.ts   # AI provider registry
-│   │   └── skills.ts      # Skills system
-│   ├── daemon/       # HTTP daemon and routes
-│   ├── plugins.ts    # Plugin system
-│   └── types.ts      # TypeScript definitions
-├── docs/             # Documentation
-├── examples/         # Example plugins
-└── skills/           # Built-in skills
-```
-
-## Protocol Version
-
-Current: **v2**
-
-- v1: Basic signed messages, static key encryption
-- v2: Hello/HelloAck handshake, ephemeral keys (PFS), rate limiting, replay protection, key rotation
-
-Backward compatible - v2 peers can communicate with v1 peers (falls back to static encryption).
 
 ## Contributing
 

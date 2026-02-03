@@ -29,7 +29,31 @@ export const pluginsRouter = new Hono();
 function createInjectors() {
   return {
     inject: async (session: string, message: string, options?: PluginInjectOptions): Promise<string> => {
-      const result = await inject(session, message, { silent: true, ...options });
+      // Parse `from` field to create security source if not provided
+      let source = options?.source;
+      if (!source && options?.from) {
+        const { createInjectionSource } = await import("../../security/types.js");
+        const from = options.from;
+
+        if (from.startsWith("p2p:")) {
+          const peerKey = from.slice(4);
+          source = createInjectionSource("p2p", {
+            trustLevel: "untrusted",
+            identity: { publicKey: peerKey },
+          });
+        } else if (from === "cron") {
+          source = createInjectionSource("cron");
+        } else if (from === "api") {
+          source = createInjectionSource("api", { trustLevel: "semi-trusted" });
+        } else if (from.startsWith("plugin:")) {
+          const pluginName = from.slice(7);
+          source = createInjectionSource("plugin", {
+            identity: { pluginName },
+          });
+        }
+      }
+
+      const result = await inject(session, message, { silent: true, ...options, source });
       return result.response;
     },
     getSessions: () => Object.keys(getSessions()),

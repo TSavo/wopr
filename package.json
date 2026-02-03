@@ -21,9 +21,13 @@
     "hono": "^4.6.0",
     "hyperswarm": "^4.16.0",
     "picocolors": "^1.0.0",
+    "sqlite-vec": "0.1.7-alpha.2",
     "winston": "^3.19.0",
     "ws": "^8.19.0",
     "zod": "^4.3.6"
+  },
+  "optionalDependencies": {
+    "node-llama-cpp": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.7",

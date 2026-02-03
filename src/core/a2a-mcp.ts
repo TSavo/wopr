@@ -12,7 +12,8 @@ import { join } from "path";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "fs";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { SESSIONS_DIR, GLOBAL_IDENTITY_DIR } from "../paths.js";
+import { SESSIONS_DIR, GLOBAL_IDENTITY_DIR, WOPR_HOME } from "../paths.js";
+import { MemoryIndexManager } from "../memory/index.js";
 import { config as centralConfig } from "./config.js";
 import {
   getCrons,
@@ -26,6 +27,9 @@ import {
   getContext,
   checkToolAccess,
   isEnforcementEnabled,
+  getSessionIndexable,
+  canIndexSession,
+  getSecurityConfig,
   type PolicyCheckResult,
 } from "../security/index.js";
 
@@ -675,105 +679,163 @@ export function getA2AMcpServer(sessionName: string): any {
     )
   );
 
+  // Memory index manager instance (lazily initialized)
+  let memoryManager: MemoryIndexManager | null = null;
+
+  const getMemoryManager = async () => {
+    if (!memoryManager) {
+      const sessionDir = join(SESSIONS_DIR, sessionName);
+      memoryManager = await MemoryIndexManager.create({
+        globalDir: GLOBAL_IDENTITY_DIR,
+        sessionDir: sessionDir,
+        config: {
+          store: {
+            path: join(WOPR_HOME, "memory", "index.sqlite"),
+            vector: { enabled: true },
+          },
+        },
+      });
+    }
+    return memoryManager;
+  };
+
   tools.push(
     tool(
       "memory_search",
-      "Semantically search memory files for relevant content. Searches both global identity and session-specific files.",
+      "Semantically search memory files using vector embeddings and hybrid BM25 keyword search. Searches both global identity and session-specific files.",
       {
-        query: z.string().describe("Search query"),
+        query: z.string().describe("Search query - uses semantic similarity to find relevant content"),
         maxResults: z.number().optional().describe("Maximum results (default: 10)"),
-        minScore: z.number().optional().describe("Minimum relevance score (default: 0.35)")
+        minScore: z.number().optional().describe("Minimum relevance score 0-1 (default: 0.35)")
       },
       async (args) => {
         const { query, maxResults = 10, minScore = 0.35 } = args;
-        const sessionDir = join(SESSIONS_DIR, sessionName);
-        const sessionMemoryDir = join(sessionDir, "memory");
 
-        // Collect files from both global and session, tracking sources
-        const filesToSearch: { path: string; source: string }[] = [];
+        try {
+          const manager = await getMemoryManager();
+          let results = await manager.search(query, { maxResults: maxResults * 2, minScore });
 
-        // Add global identity root files first
-        for (const f of ["MEMORY.md", "IDENTITY.md", "SOUL.md", "USER.md", "AGENTS.md", "PRIVATE.md", "SELF.md"]) {
-          const globalPath = join(GLOBAL_IDENTITY_DIR, f);
-          if (existsSync(globalPath)) {
-            filesToSearch.push({ path: globalPath, source: `global/${f}` });
+          // Filter session transcript results based on indexable permissions
+          const ctx = getContext(sessionName);
+          const trustLevel = ctx?.source?.trustLevel ?? "owner";
+          const secConfig = getSecurityConfig();
+          const indexablePatterns = getSessionIndexable(secConfig, sessionName, trustLevel);
+
+          results = results.filter((r) => {
+            // Non-session sources are always visible
+            if (r.source !== "sessions") {
+              return true;
+            }
+            // Extract target session name from path (e.g., "sessions/foo.conversation.jsonl" -> "foo")
+            const pathMatch = r.path.match(/^sessions\/(.+?)\.conversation\.jsonl$/);
+            if (!pathMatch) {
+              return true; // Non-standard path, allow
+            }
+            const targetSession = pathMatch[1];
+            return canIndexSession(sessionName, targetSession, indexablePatterns);
+          }).slice(0, maxResults);
+
+          if (results.length === 0) {
+            return { content: [{ type: "text", text: `No matches found for "${query}"` }] };
           }
-          const sessionPath = join(sessionDir, f);
-          if (existsSync(sessionPath)) {
-            filesToSearch.push({ path: sessionPath, source: `session/${f}` });
+
+          const formatted = results.map((r, i) =>
+            `[${i + 1}] ${r.source}/${r.path}:${r.startLine}-${r.endLine} (score: ${r.score.toFixed(2)})\n${r.snippet}`
+          ).join("\n\n---\n\n");
+
+          return { content: [{ type: "text", text: `Found ${results.length} results:\n\n${formatted}` }] };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // Fallback to keyword-only search if embeddings fail
+          logger.warn(`Vector search failed, falling back to keyword search: ${message}`);
+
+          const sessionDir = join(SESSIONS_DIR, sessionName);
+          const sessionMemoryDir = join(sessionDir, "memory");
+          const filesToSearch: { path: string; source: string }[] = [];
+
+          // Add global identity root files
+          for (const f of ["MEMORY.md", "IDENTITY.md", "SOUL.md", "USER.md", "AGENTS.md", "PRIVATE.md", "SELF.md"]) {
+            const globalPath = join(GLOBAL_IDENTITY_DIR, f);
+            if (existsSync(globalPath)) {
+              filesToSearch.push({ path: globalPath, source: `global/${f}` });
+            }
+            const sessionPath = join(sessionDir, f);
+            if (existsSync(sessionPath)) {
+              filesToSearch.push({ path: sessionPath, source: `session/${f}` });
+            }
           }
-        }
 
-        // Add global memory files
-        if (existsSync(GLOBAL_MEMORY_DIR)) {
-          const memFiles = readdirSync(GLOBAL_MEMORY_DIR).filter(f => f.endsWith(".md"));
-          for (const f of memFiles) {
-            filesToSearch.push({ path: join(GLOBAL_MEMORY_DIR, f), source: `global/memory/${f}` });
+          // Add global memory files
+          if (existsSync(GLOBAL_MEMORY_DIR)) {
+            const memFiles = readdirSync(GLOBAL_MEMORY_DIR).filter(f => f.endsWith(".md"));
+            for (const f of memFiles) {
+              filesToSearch.push({ path: join(GLOBAL_MEMORY_DIR, f), source: `global/memory/${f}` });
+            }
           }
-        }
 
-        // Add session memory files
-        if (existsSync(sessionMemoryDir)) {
-          const memFiles = readdirSync(sessionMemoryDir).filter(f => f.endsWith(".md"));
-          for (const f of memFiles) {
-            filesToSearch.push({ path: join(sessionMemoryDir, f), source: `session/memory/${f}` });
+          // Add session memory files
+          if (existsSync(sessionMemoryDir)) {
+            const memFiles = readdirSync(sessionMemoryDir).filter(f => f.endsWith(".md"));
+            for (const f of memFiles) {
+              filesToSearch.push({ path: join(sessionMemoryDir, f), source: `session/memory/${f}` });
+            }
           }
-        }
 
-        if (filesToSearch.length === 0) {
-          return { content: [{ type: "text", text: "No memory files found." }] };
-        }
+          if (filesToSearch.length === 0) {
+            return { content: [{ type: "text", text: "No memory files found." }] };
+          }
 
-        const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
-        const results: any[] = [];
+          const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+          const results: any[] = [];
 
-        for (const { path: filePath, source } of filesToSearch) {
-          const content = readFileSync(filePath, "utf-8");
-          const lines = content.split("\n");
+          for (const { path: filePath, source } of filesToSearch) {
+            const content = readFileSync(filePath, "utf-8");
+            const lines = content.split("\n");
 
-          const chunkSize = 5;
-          for (let i = 0; i < lines.length; i += chunkSize) {
-            const chunk = lines.slice(i, i + chunkSize).join("\n");
-            const chunkLower = chunk.toLowerCase();
+            const chunkSize = 5;
+            for (let i = 0; i < lines.length; i += chunkSize) {
+              const chunk = lines.slice(i, i + chunkSize).join("\n");
+              const chunkLower = chunk.toLowerCase();
 
-            let score = 0;
-            for (const term of queryTerms) {
-              if (chunkLower.includes(term)) {
-                score += 1;
-                if (chunkLower.includes(query.toLowerCase())) score += 2;
+              let score = 0;
+              for (const term of queryTerms) {
+                if (chunkLower.includes(term)) {
+                  score += 1;
+                  if (chunkLower.includes(query.toLowerCase())) score += 2;
+                }
+              }
+
+              if (score > 0) {
+                results.push({
+                  relPath: source,
+                  lineStart: i + 1,
+                  lineEnd: Math.min(i + chunkSize, lines.length),
+                  snippet: chunk.substring(0, 300) + (chunk.length > 300 ? "..." : ""),
+                  score,
+                });
               }
             }
-
-            if (score > 0) {
-              results.push({
-                relPath: source,
-                lineStart: i + 1,
-                lineEnd: Math.min(i + chunkSize, lines.length),
-                snippet: chunk.substring(0, 300) + (chunk.length > 300 ? "..." : ""),
-                score,
-              });
-            }
           }
+
+          const maxPossibleScore = queryTerms.length * 3;
+          for (const r of results) {
+            r.score = maxPossibleScore > 0 ? r.score / maxPossibleScore : 0;
+          }
+
+          results.sort((a, b) => b.score - a.score);
+          const filteredResults = results.filter(r => r.score >= minScore);
+          const topResults = filteredResults.slice(0, maxResults);
+
+          if (topResults.length === 0) {
+            return { content: [{ type: "text", text: `No matches found for "${query}"` }] };
+          }
+
+          const formatted = topResults.map((r, i) =>
+            `[${i + 1}] ${r.relPath}:${r.lineStart}-${r.lineEnd} (score: ${r.score.toFixed(2)})\n${r.snippet}`
+          ).join("\n\n---\n\n");
+
+          return { content: [{ type: "text", text: `Found ${topResults.length} results (keyword fallback):\n\n${formatted}` }] };
         }
-
-        const maxPossibleScore = queryTerms.length * 3;
-        for (const r of results) {
-          r.score = maxPossibleScore > 0 ? r.score / maxPossibleScore : 0;
-        }
-
-        results.sort((a, b) => b.score - a.score);
-        const filteredResults = results.filter(r => r.score >= minScore);
-        const topResults = filteredResults.slice(0, maxResults);
-
-        if (topResults.length === 0) {
-          return { content: [{ type: "text", text: `No matches found for "${query}"` }] };
-        }
-
-        const formatted = topResults.map((r, i) =>
-          `[${i + 1}] ${r.relPath}:${r.lineStart}-${r.lineEnd} (score: ${r.score.toFixed(2)})\n${r.snippet}`
-        ).join("\n\n---\n\n");
-
-        return { content: [{ type: "text", text: `Found ${topResults.length} results:\n\n${formatted}` }] };
       }
     )
   );
@@ -1474,7 +1536,7 @@ export function getA2AMcpServer(sessionName: string): any {
   tools.push(
     tool(
       "exec_command",
-      "Execute a sandboxed shell command. Only safe commands allowed (ls, cat, grep, etc.). Working directory is restricted to session directory.",
+      "Execute a shell command. If session is sandboxed, runs in Docker container with full shell access. Otherwise, only safe commands allowed (ls, cat, grep, etc.).",
       {
         command: z.string().describe("Command to execute"),
         cwd: z.string().optional().describe("Working directory (must be within session directory)"),
@@ -1484,7 +1546,43 @@ export function getA2AMcpServer(sessionName: string): any {
         // SECURITY: Check inject.exec capability
         return withSecurityCheck("exec_command", sessionName, async () => {
           const { command, cwd, timeout = 10000 } = args;
+          const effectiveTimeout = Math.min(timeout, 60000);
 
+          // Check if session is sandboxed - if so, execute in container
+          const { execInSandbox, isSessionSandboxed } = await import("../security/index.js");
+          const sandboxed = await isSessionSandboxed(sessionName);
+
+          if (sandboxed) {
+            // SANDBOXED EXECUTION: Full shell access in isolated container
+            const result = await execInSandbox(sessionName, command, {
+              workDir: cwd,
+              timeout: effectiveTimeout / 1000, // Convert to seconds
+            });
+
+            if (!result) {
+              return {
+                content: [{ type: "text", text: "Failed to execute in sandbox" }],
+                isError: true
+              };
+            }
+
+            let output = result.stdout;
+            if (result.stderr) output += `\n[stderr]\n${result.stderr}`;
+            if (output.length > 10000) {
+              output = output.substring(0, 10000) + "\n... (truncated)";
+            }
+
+            if (result.exitCode !== 0) {
+              return {
+                content: [{ type: "text", text: output || `Exit code: ${result.exitCode}` }],
+                isError: true
+              };
+            }
+
+            return { content: [{ type: "text", text: output || "(no output)" }] };
+          }
+
+          // HOST EXECUTION: Restricted to safe commands only
           const allowedCommands = [
             "ls", "cat", "grep", "find", "echo", "date", "pwd", "whoami",
             "head", "tail", "wc", "sort", "uniq", "diff", "env", "which",
@@ -1494,7 +1592,7 @@ export function getA2AMcpServer(sessionName: string): any {
           const firstWord = command.trim().split(/\s+/)[0];
           if (!allowedCommands.includes(firstWord)) {
             return {
-              content: [{ type: "text", text: `Command '${firstWord}' not allowed. Allowed: ${allowedCommands.join(", ")}` }],
+              content: [{ type: "text", text: `Command '${firstWord}' not allowed on host. Allowed: ${allowedCommands.join(", ")}. Enable sandboxing for full shell access.` }],
               isError: true
             };
           }
@@ -1502,7 +1600,7 @@ export function getA2AMcpServer(sessionName: string): any {
           if (command.includes(";") || command.includes("&&") || command.includes("||") ||
               command.includes("|") || command.includes("`") || command.includes("$(")) {
             return {
-              content: [{ type: "text", text: "Shell operators not allowed" }],
+              content: [{ type: "text", text: "Shell operators not allowed on host. Enable sandboxing for full shell access." }],
               isError: true
             };
           }
@@ -1554,8 +1652,6 @@ export function getA2AMcpServer(sessionName: string): any {
           }
 
           try {
-            const effectiveTimeout = Math.min(timeout, 60000);
-
             const { stdout, stderr } = await execAsync(command, {
               cwd: workDir,
               timeout: effectiveTimeout,
