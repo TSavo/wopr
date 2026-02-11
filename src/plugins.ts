@@ -253,6 +253,28 @@ export interface InstallResult {
   enabled: boolean;
 }
 
+const PLUGIN_DEPENDENCY_BACKFILL: Record<string, readonly string[]> = {
+  "wopr-plugin-slack": ["@slack/bolt", "winston"],
+  "wopr-plugin-signal": ["winston"],
+  "wopr-plugin-whatsapp": ["@whiskeysockets/baileys", "pino", "qrcode-terminal", "winston"],
+  "wopr-plugin-imessage": ["winston"],
+  "wopr-plugin-webui": ["@kobalte/core", "solid-js"],
+  "wopr-plugin-p2p": ["discord.js", "hyperswarm", "winston"],
+  "wopr-plugin-provider-anthropic": ["@anthropic-ai/claude-agent-sdk", "@anthropic-ai/claude-code", "winston"],
+  "wopr-plugin-provider-kimi": ["@moonshot-ai/kimi-agent-sdk", "winston"],
+};
+
+function ensurePluginDependencies(pluginRoot: string, pluginName?: string): void {
+  if (!pluginName) return;
+
+  const requiredDeps = PLUGIN_DEPENDENCY_BACKFILL[pluginName];
+  if (!requiredDeps?.length) return;
+
+  logger.info(`[plugins] Backfilling missing dependencies for ${pluginName}...`);
+  const depArgs = requiredDeps.map(dep => `"${dep}"`).join(" ");
+  execSync(`npm install ${depArgs}`, { cwd: pluginRoot, stdio: "inherit" });
+}
+
 export async function installPlugin(source: string): Promise<InstalledPlugin> {
   mkdirSync(PLUGINS_DIR, { recursive: true });
 
@@ -279,6 +301,8 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     if (existsSync(pkgPath)) {
       logger.info(`[plugins] Installing dependencies for ${repo}...`);
       execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      ensurePluginDependencies(pluginDir, pkg.name);
       
       // Build TypeScript plugins if tsconfig.json exists
       if (existsSync(join(pluginDir, "tsconfig.json"))) {
@@ -317,6 +341,8 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
     if (existsSync(pkgPath)) {
       logger.info(`[plugins] Installing dependencies for local plugin...`);
       execSync("npm install", { cwd: pluginDir, stdio: "inherit" });
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+      ensurePluginDependencies(pluginDir, pkg.name);
       
       // Build TypeScript plugins if tsconfig.json exists
       if (existsSync(join(pluginDir, "tsconfig.json"))) {
@@ -350,6 +376,7 @@ export async function installPlugin(source: string): Promise<InstalledPlugin> {
 
     // Use npm to install
     execSync(`npm install "${npmPackage}"`, { cwd: pluginDir, stdio: "inherit" });
+    ensurePluginDependencies(pluginDir, npmPackage);
 
     // Read installed package metadata
     const pkgPath = join(pluginDir, "node_modules", npmPackage, "package.json");
